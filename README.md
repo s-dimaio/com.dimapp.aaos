@@ -35,7 +35,7 @@ The car app communicates with this companion app via a secure, authenticated bri
    ```
 3. Run the app in development mode:
    ```bash
-   homey app run
+   homey app run --r
    ```
 
 ### Staging/Production

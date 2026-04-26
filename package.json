@@ -1,0 +1,15 @@
+{
+  "name": "com.dimapp.aaos",
+  "version": "1.0.0",
+  "description": "Homey AAOS Companion — OAuth2 relay for HomeyAutomotive Android Automotive OS app",
+  "main": "app.js",
+  "scripts": {
+    "start": "homey app run"
+  },
+  "keywords": [],
+  "author": "Simone Di Maio",
+  "license": "GPL-3.0-only",
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

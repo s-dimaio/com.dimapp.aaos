@@ -1,0 +1,61 @@
+{
+  "id": "com.dimapp.aaos",
+  "version": "1.0.0",
+  "compatibility": ">=12.0.0",
+  "sdk": 3,
+  "brandColor": "#3DDC84",
+  "platforms": ["local"],
+  "name": {
+    "en": "Android Automotive",
+    "it": "Android Automotive"
+  },
+  "description": {
+    "en": "Take your smart home on the road.",
+    "it": "Porta la tua smart home in viaggio con te."
+  },
+  "author": {
+    "name": "Simone Di Maio",
+    "email": "simone.dimaio77@gmail.com"
+  },
+  "category": ["tools"],
+  "permissions": [
+    "homey:manager:api"
+  ],
+  "images": {
+    "small": "/assets/images/small.png",
+    "large": "/assets/images/large.png",
+    "xlarge": "/assets/images/xlarge.png"
+  },
+  "api": {
+    "startAuth": {
+      "method": "POST",
+      "path": "/auth/start",
+      "public": true
+    },
+    "pollAuth": {
+      "method": "GET",
+      "path": "/auth/poll",
+      "public": true
+    },
+    "refreshAuth": {
+      "method": "POST",
+      "path": "/auth/refresh",
+      "public": true
+    },
+    "getDashboards": {
+      "method": "GET",
+      "path": "/dashboards",
+      "public": true
+    },
+    "getDevices": {
+      "method": "GET",
+      "path": "/devices",
+      "public": true
+    },
+    "getZones": {
+      "method": "GET",
+      "path": "/zones",
+      "public": true
+    }
+  }
+}

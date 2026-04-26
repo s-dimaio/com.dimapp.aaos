@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <script type="text/javascript" src="/homey.js" data-origin="settings"></script>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      margin: 0;
+      overflow-x: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      margin-left: 10px;
+      margin-right: 10px;
+    }
+
+    /* SPA view management */
+    .view {
+      display: none;
+    }
+
+    .view.is-active {
+      display: block;
+    }
+
+    #view-selector.is-active {
+      display: flex;
+    }
+
+    /* Main Menu list items (Gemini AI Style) */
+    .menu-list-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 15px;
+    }
+
+    .menu-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border: 1px solid rgba(0, 0, 0, 0.1);
+      border-radius: 8px;
+      padding: 16px;
+      background-color: rgba(255, 255, 255, 0.5);
+      cursor: pointer;
+      transition: background-color 0.2s, transform 0.1s;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .menu-item:hover {
+      background-color: rgba(0, 0, 0, 0.04);
+    }
+
+    .menu-item:active {
+      transform: scale(0.98);
+    }
+
+    .menu-item-content {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .menu-item-icon {
+      font-size: 24px;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #3DDC84;
+      /* AAOS Brand Color (Android Green) */
+    }
+
+    .menu-item-text {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .menu-item-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #333;
+    }
+
+    .menu-item-subtitle {
+      font-size: 13px;
+      color: #666;
+    }
+
+    .menu-item-arrow {
+      color: #999;
+      font-size: 20px;
+      font-weight: bold;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      color: #666;
+      line-height: 1.5;
+      margin-top: 10px;
+      margin-bottom: 20px;
+    }
+
+    /* Device Selector Styles */
+    .search-container {
+      margin-bottom: 20px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: #fdfdfd;
+      padding-top: 10px;
+      padding-bottom: 10px;
+    }
+
+    .homey-form-input-search {
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .zone-group {
+      margin-bottom: 25px;
+    }
+
+    .zone-title {
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #888;
+      margin-bottom: 10px;
+      padding-bottom: 5px;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    }
+
+    .device-item {
+      display: flex;
+      align-items: center;
+      padding: 12px;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.03);
+      cursor: pointer;
+    }
+
+    .device-item:last-child {
+      border-bottom: none;
+    }
+
+    .device-info {
+      flex: 1;
+      margin-left: 12px;
+    }
+
+    .device-name {
+      font-size: 15px;
+      font-weight: 500;
+    }
+
+    .device-class {
+      font-size: 12px;
+      color: #999;
+    }
+
+    /* Counter and Save */
+    .footer {
+      padding: 20px;
+      position: sticky;
+      bottom: 0;
+      background: white;
+      border-top: 1px solid rgba(0, 0, 0, 0.1);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .counter {
+      text-align: center;
+      font-size: 13px;
+      color: #666;
+    }
+
+    .counter.limit-reached {
+      color: #e74c3c;
+      font-weight: 600;
+    }
+
+    .homey-button-primary-full {
+      width: 100%;
+      background-color: #3DDC84;
+      color: white;
+      border: none;
+      padding: 12px;
+      border-radius: 4px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .homey-button-primary-full:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 12px 20px;
+      background-color: #2ecc71;
+      color: white;
+      border-radius: 4px;
+      font-size: 14px;
+      z-index: 1000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+
+    .toast.show {
+      opacity: 1;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="content">
+
+    <!-- View 0: Main Menu -->
+    <div id="view-menu" class="view is-active">
+      <div class="menu-list-container">
+        <div id="nav_home_config" class="menu-item" role="button" tabindex="0">
+          <div class="menu-item-content">
+            <div class="menu-item-icon">
+              <!-- Smart Home / Grid Icon -->
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
+              </svg>
+            </div>
+            <div class="menu-item-text">
+              <span class="menu-item-title" data-i18n="settings.menu.home_config_title"></span>
+              <span class="menu-item-subtitle" data-i18n="settings.menu.home_config_desc"></span>
+            </div>
+          </div>
+          <div class="menu-item-arrow">›</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- View 1: Device Selector -->
+    <div id="view-selector" class="view" style="height: 100vh; flex-direction: column;">
+      <div style="padding: 10px 0; flex-shrink: 0;">
+        <header class="homey-header">
+          <h1 class="homey-title" data-i18n="settings.home_config.title"></h1>
+        </header>
+        <p class="subtitle" data-i18n="settings.home_config.subtitle"></p>
+
+        <div class="search-container" style="display: flex; gap: 10px; align-items: center;">
+          <input type="search" id="deviceSearch" class="homey-form-input"
+            data-i18n-placeholder="settings.home_config.search_placeholder" style="flex: 1; margin-bottom: 0;">
+          <button id="saveBtn" class="homey-button-secondary" data-i18n="settings.common.save"
+            style="margin: 0; white-space: nowrap;"></button>
+        </div>
+      </div>
+
+      <!-- Scrollable List Area -->
+      <div id="deviceList" style="flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0;">
+        <p style="text-align:center; padding:20px; color:#999" data-i18n="settings.home_config.loading"></p>
+      </div>
+
+      <!-- Simplified Footer (Counter Only) -->
+      <div class="footer"
+        style="flex-shrink: 0; background: white; padding: 15px; border-top: 1px solid #eee; margin-top: auto; display: flex; justify-content: center; align-items: center;">
+        <div id="selectionCounter" class="counter" style="margin-bottom: 0; font-weight: 500;">0 / 9</div>
+      </div>
+
+      <!-- Back Navigation -->
+      <div style="margin-bottom: 40px;">
+        <a id="backBtn" href="#"
+          style="color: rgba(0,0,0,0.4); text-decoration: none; font-size: 14px; display: inline-flex; align-items: center; gap: 5px;"
+          data-i18n="settings.common.back_to_menu"></a>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="toast" class="toast" data-i18n="settings.common.saved"></div>
+
+  <script type="text/javascript">
+    function onHomeyReady(Homey) {
+      Homey.ready();
+
+      const MAX_DEVICES = 9;
+      let allDevices = [];
+      let allZones = {};
+      let selectedIds = [];
+
+      const viewMenu = document.getElementById('view-menu');
+      const viewSelector = document.getElementById('view-selector');
+      const deviceList = document.getElementById('deviceList');
+      const searchInput = document.getElementById('deviceSearch');
+      const counterLabel = document.getElementById('selectionCounter');
+      const toast = document.getElementById('toast');
+
+      function switchView(view) {
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('is-active'));
+        view.classList.add('is-active');
+      }
+
+      function showToast() {
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 3000);
+      }
+
+      // Load data
+      function loadData() {
+        console.log("Loading Homey data...");
+
+        // Fetch zones
+        Homey.api('GET', '/zones', null, (err, zones) => {
+          if (err) return console.error("Failed to load zones", err);
+          allZones = zones;
+
+          // Fetch devices (via proxy)
+          Homey.api('GET', '/devices', null, (err, devices) => {
+            if (err) return console.error("Failed to load devices", err);
+
+            allDevices = Object.values(devices)
+              .sort((a, b) => a.name.localeCompare(b.name));
+
+            // Fetch saved settings
+            Homey.get('home_devices_ids', (err, val) => {
+              selectedIds = val || [];
+              renderList();
+              updateCounter();
+            });
+          });
+        });
+      }
+
+      function renderList(filter = '') {
+        deviceList.innerHTML = '';
+        const search = filter.toLowerCase();
+
+        // Group by zone
+        const grouped = {};
+        allDevices.forEach(d => {
+          const zoneName = allZones[d.zone]?.name || 'Home';
+          if (d.name.toLowerCase().includes(search) || zoneName.toLowerCase().includes(search)) {
+            if (!grouped[zoneName]) grouped[zoneName] = [];
+            grouped[zoneName].push(d);
+          }
+        });
+
+        const sortedZones = Object.keys(grouped).sort();
+        if (sortedZones.length === 0) {
+          deviceList.innerHTML = '<p style="text-align:center; padding:20px; color:#999">' + Homey.__('settings.home_config.no_devices') + '</p>';
+          return;
+        }
+
+        sortedZones.forEach(zoneName => {
+          const zoneDiv = document.createElement('div');
+          zoneDiv.className = 'zone-group';
+          zoneDiv.innerHTML = '<div class="zone-title">' + zoneName + '</div>';
+
+          grouped[zoneName].forEach(device => {
+            const item = document.createElement('div');
+            item.className = 'device-item';
+
+            const isChecked = selectedIds.indexOf(device.id) !== -1;
+
+            item.innerHTML = `
+              <input type="checkbox" id="chk_${device.id}" ${isChecked ? 'checked' : ''} ${!isChecked && selectedIds.length >= MAX_DEVICES ? 'disabled' : ''}>
+              <div class="device-info">
+                <div class="device-name">${device.name}</div>
+                <div class="device-class">${device.class}</div>
+              </div>
+            `;
+
+            item.onclick = (e) => {
+              if (e.target.tagName === 'INPUT') return;
+              const chk = document.getElementById('chk_' + device.id);
+              if (!chk.disabled) {
+                chk.checked = !chk.checked;
+                handleSelection(device.id, chk.checked);
+              }
+            };
+
+            item.querySelector('input').onchange = (e) => {
+              handleSelection(device.id, e.target.checked);
+            };
+
+            zoneDiv.appendChild(item);
+          });
+
+          deviceList.appendChild(zoneDiv);
+        });
+      }
+
+      function handleSelection(id, isSelected) {
+        if (isSelected) {
+          if (selectedIds.length < MAX_DEVICES) {
+            selectedIds.push(id);
+          }
+        } else {
+          selectedIds = selectedIds.filter(i => i !== id);
+        }
+        updateCounter();
+        // Dynamic re-render
+        renderList(searchInput.value);
+      }
+
+      function updateCounter() {
+        counterLabel.innerText = selectedIds.length + " / " + MAX_DEVICES;
+        if (selectedIds.length >= MAX_DEVICES) {
+          counterLabel.classList.add('limit-reached');
+        } else {
+          counterLabel.classList.remove('limit-reached');
+        }
+      }
+
+      // Event Listeners
+      const navHomeConfig = document.getElementById('nav_home_config');
+      const backBtn = document.getElementById('backBtn');
+      const saveBtn = document.getElementById('saveBtn');
+
+      if (navHomeConfig) {
+        navHomeConfig.addEventListener('click', () => {
+          searchInput.placeholder = Homey.__('settings.home_config.search_placeholder');
+          loadData();
+          switchView(viewSelector);
+        });
+      }
+
+      if (backBtn) {
+        backBtn.innerText = Homey.__('settings.common.back_to_menu');
+        backBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          switchView(viewMenu);
+        });
+      }
+
+      if (saveBtn) {
+        saveBtn.innerText = Homey.__('settings.common.save');
+        saveBtn.addEventListener('click', () => {
+          console.log("Save button clicked, selected IDs:", selectedIds);
+
+          // Visual feedback - temporary disable to prevent double clicks
+          saveBtn.disabled = true;
+
+          Homey.set('home_devices_ids', selectedIds, (err) => {
+            saveBtn.disabled = false;
+
+            if (err) {
+              console.error("Error saving settings:", err);
+              return Homey.alert(err);
+            }
+
+            console.log("Settings saved successfully!");
+            // Both toast and alert for maximum visibility
+            showToast();
+            Homey.alert(Homey.__('settings.common.saved') || "Saved!");
+          });
+        });
+      }
+
+      searchInput.addEventListener('input', (e) => renderList(e.target.value));
+
+    }
+  </script>
+</body>
+
+</html>

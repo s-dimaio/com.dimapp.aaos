@@ -1,0 +1,11 @@
+env.json
+node_modules/
+.homey/
+
+
+# Added by Homey CLI
+/.homeybuild/
+
+/.agent
+/img
+release.ps1

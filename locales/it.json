@@ -1,0 +1,32 @@
+{
+  "app_name": "Homey AAOS Companion",
+  "app_description": "App companion per HomeyAutomotive — fa da relay per il flusso OAuth2.",
+  "auth_session_started": "Sessione di autenticazione avviata.",
+  "auth_session_not_found": "Sessione di autenticazione non trovata o scaduta.",
+  "auth_session_expired": "La sessione di autenticazione è scaduta. Riprova.",
+  "auth_complete": "Autenticazione completata.",
+  "auth_pending": "Autenticazione in corso — in attesa che l'utente autorizzi.",
+  "error_missing_session_id": "Parametro obbligatorio mancante: sessionId.",
+  "error_internal": "Si è verificato un errore interno. Riprova.",
+  "error_token_exchange": "Impossibile scambiare il codice di autorizzazione con un access token.",
+  "settings": {
+    "menu": {
+      "home_config_title": "Configurazione Tab Home",
+      "home_config_desc": "Scegli quali luci e serrature mostrare nella Home della tua auto."
+    },
+    "home_config": {
+      "title": "Dispositivi Tab Home",
+      "subtitle": "Seleziona fino a 9 dispositivi. Se non ne selezioni nessuno verranno mostrati i tuoi Dispositivi Preferiti.",
+      "search_placeholder": "Cerca dispositivo",
+      "max_reached": "Hai raggiunto il limite massimo di 9 dispositivi.",
+      "loading": "Caricamento dispositivi...",
+      "no_devices": "Nessuna luce o serratura trovata."
+    },
+    "common": {
+      "save": "Salva",
+      "back": "Indietro",
+      "back_to_menu": "← Torna alle Impostazioni",
+      "saved": "Impostazioni salvate con successo!"
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "app_name": "Homey AAOS Companion",
+  "app_description": "Companion app for HomeyAutomotive — relays the OAuth2 authentication flow.",
+  "auth_session_started": "Authentication session started.",
+  "auth_session_not_found": "Authentication session not found or expired.",
+  "auth_session_expired": "Authentication session has expired. Please try again.",
+  "auth_complete": "Authentication complete.",
+  "auth_pending": "Authentication pending — waiting for user to authorize.",
+  "error_missing_session_id": "Missing required parameter: sessionId.",
+  "error_internal": "An internal error occurred. Please try again.",
+  "error_token_exchange": "Failed to exchange authorization code for access token.",
+  "settings": {
+    "menu": {
+      "home_config_title": "Home Tab Configuration",
+      "home_config_desc": "Choose which lights and locks to show in your car's Home screen."
+    },
+    "home_config": {
+      "title": "Home Tab Devices",
+      "subtitle": "Select up to 9 devices. If none are selected your Favorite devices will be shown.",
+      "search_placeholder": "Search device",
+      "max_reached": "You have reached the maximum limit of 9 devices.",
+      "loading": "Loading devices...",
+      "no_devices": "No lights or locks found."
+    },
+    "common": {
+      "save": "Save",
+      "back": "Back",
+      "back_to_menu": "← Back to Settings",
+      "saved": "Settings saved successfully!"
+    }
+  }
+}

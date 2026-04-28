@@ -2,5 +2,13 @@
   "1.0.1": {
     "en": "Initial release of the Android Automotive app for Android Automotive OS.",
     "it": "Prima release dell'app Android Automotive per Android Automotive OS."
+  },
+  "1.0.2": {
+    "en": "Minor bug fixes.",
+    "it": "Sistemazione bug minori."
+  },
+  "1.0.3": {
+    "en": "Improved lights filtering, added support for doorbells, and hid grouped/hidden devices from dashboard settings.",
+    "it": "Migliorato il filtraggio delle luci, aggiunto supporto per citofoni e rimossi dispositivi nascosti/raggruppati dalle impostazioni."
   }
 }

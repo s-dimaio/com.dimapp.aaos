@@ -1,6 +1,6 @@
 {
   "name": "com.dimapp.aaos",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "Homey AAOS Companion — OAuth2 relay for HomeyAutomotive Android Automotive OS app",
   "main": "app.js",
   "scripts": {

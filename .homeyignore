@@ -1,4 +1,7 @@
-env.json
+# The env.json file MUST be uploaded to the homey portal
+# env.json
+env.example.json
+
 node_modules/
 .homey/
 

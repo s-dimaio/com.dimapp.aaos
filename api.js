@@ -109,7 +109,7 @@ async function refreshAuth({ homey, body }) {
 }
 
 async function getDashboards({ homey }) {
-  console.log('[HomeyAaosCompanionApp] getDashboards request received');
+  homey.app.log('[api] getDashboards request received');
   
   const selectedIds = homey.settings.get('home_devices_ids') || [];
   
@@ -142,7 +142,7 @@ async function getDashboards({ homey }) {
   const response = {};
   response[virtualDashboardId] = dashboard;
 
-  console.log(`[HomeyAaosCompanionApp] getDashboards successful: returning 1 virtual dashboard with ${selectedIds.length} devices.`);
+  homey.app.log(`[api] getDashboards successful: returning 1 virtual dashboard with ${selectedIds.length} devices.`);
   return response;
 }
 
@@ -151,7 +151,7 @@ async function getDashboards({ homey }) {
  * Used by the settings page.
  */
 async function getDevices({ homey }) {
-  console.log('[HomeyAaosCompanionApp] getDevices proxy called');
+  homey.app.log('[api] getDevices proxy called');
   
   const localUrl = await homey.api.getLocalUrl();
   const token = await homey.api.getOwnerApiToken();
@@ -168,18 +168,41 @@ async function getDevices({ homey }) {
   
   const devices = await response.json();
 
-  // Return only the fields needed by the settings UI to keep the payload small
+  // Find IDs of devices that are part of a group
+  const excludedIds = new Set();
+  for (const device of Object.values(devices)) {
+    if (device.settings && Array.isArray(device.settings.deviceIds)) {
+      for (const childId of device.settings.deviceIds) {
+        excludedIds.add(childId);
+      }
+    }
+  }
+
   const filtered = {};
   for (const [id, device] of Object.entries(devices)) {
-    if (device.class === 'light' || device.class === 'lock' || device.class === 'garagedoor') {
+    // Skip hidden devices or devices that are members of a group
+    if (device.hidden === true || excludedIds.has(id)) {
+      continue;
+    }
+
+    // Use virtualClass override if present, otherwise fallback to driver class
+    const effectiveClass = device.virtualClass || device.class;
+
+    const isLight = effectiveClass === 'light';
+    const isDoor  = effectiveClass === 'lock' || effectiveClass === 'garagedoor' || effectiveClass === 'doorbell';
+
+    if (isLight || isDoor) {
+      homey.app.log(`[api] Device accepted: ${device.name} (class=${effectiveClass})`);
       filtered[id] = {
         id: device.id,
         name: device.name,
-        class: device.class,
+        class: effectiveClass,
         zone: device.zone
       };
     }
   }
+  
+  homey.app.log(`[api] getDevices complete. Returning ${Object.keys(filtered).length} filtered devices.`);
   return filtered;
 }
 
@@ -188,7 +211,7 @@ async function getDevices({ homey }) {
  * Used by the settings page.
  */
 async function getZones({ homey }) {
-  console.log('[HomeyAaosCompanionApp] getZones proxy called');
+  homey.app.log('[api] getZones proxy called');
   
   const localUrl = await homey.api.getLocalUrl();
   const token = await homey.api.getOwnerApiToken();

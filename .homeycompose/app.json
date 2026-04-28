@@ -1,6 +1,6 @@
 {
   "id": "com.dimapp.aaos",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "compatibility": ">=12.0.0",
   "sdk": 3,
   "brandColor": "#3DDC84",

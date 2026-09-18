@@ -1,7 +1,7 @@
 {
   "_comment": "This file is generated. Please edit .homeycompose/app.json instead.",
   "id": "com.dimapp.aaos",
-  "version": "1.0.3",
+  "version": "1.3.0",
   "compatibility": ">=12.0.0",
   "sdk": 3,
   "brandColor": "#3DDC84",
@@ -24,7 +24,8 @@
     "tools"
   ],
   "permissions": [
-    "homey:manager:api"
+    "homey:manager:api",
+    "homey:manager:geolocation"
   ],
   "images": {
     "small": "/assets/images/small.png",
@@ -38,6 +39,7 @@
       }
     }
   },
+  "homeyCommunityTopicId": 155279,
   "api": {
     "startAuth": {
       "method": "POST",
@@ -54,6 +56,11 @@
       "path": "/auth/refresh",
       "public": true
     },
+    "triggerFlow": {
+      "method": "POST",
+      "path": "/flow/trigger",
+      "public": true
+    },
     "getDashboards": {
       "method": "GET",
       "path": "/dashboards",
@@ -68,6 +75,41 @@
       "method": "GET",
       "path": "/zones",
       "public": true
+    },
+    "getLocation": {
+      "method": "GET",
+      "path": "/location",
+      "public": true
+    },
+    "getGeofenceConfig": {
+      "method": "GET",
+      "path": "/geofence",
+      "public": true
+    },
+    "getThermometersConfig": {
+      "method": "GET",
+      "path": "/thermometers",
+      "public": true
+    },
+    "getLogStatus": {
+      "method": "GET",
+      "path": "/log/status"
+    },
+    "getLogDownloadFile": {
+      "method": "GET",
+      "path": "/log/download/:index"
+    },
+    "deleteAllLogs": {
+      "method": "DELETE",
+      "path": "/log/all"
+    },
+    "deleteLogFile": {
+      "method": "DELETE",
+      "path": "/log/:index"
     }
+  },
+  "source": "https://github.com/s-dimaio/com.dimapp.aaos",
+  "bugs": {
+    "url": "https://github.com/s-dimaio/com.dimapp.aaos/issues"
   }
 }

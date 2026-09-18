@@ -14,5 +14,17 @@
   "1.0.4": {
     "en": "Minor bug fixes.",
     "it": "Sistemazione bug minori."
+  },
+  "1.1.0": {
+    "en": "Added home geolocation support for in-car geofencing and proximity alerts.",
+    "it": "Aggiunto supporto alla geolocalizzazione di Homey per avvisi di prossimità e geofence sull'auto."
+  },
+  "1.2.0": {
+    "en": "Added proximity barrier configuration, thermometer climate classification, and diagnostic file logging.",
+    "it": "Aggiunta configurazione varchi di prossimità, classificazione termometri clima e gestione log diagnostici su file."
+  },
+  "1.3.0": {
+    "en": "Added secure execution of Standard and Advanced Flows from Android Automotive OS via HomeyScript integration, setup notice in settings, and optimized session renewal.",
+    "it": "Aggiunto supporto all'avvio sicuro di Flow Standard e Avanzati da Android Automotive tramite HomeyScript, avviso di configurazione nelle impostazioni e rinnovo automatico di sessione."
   }
 }

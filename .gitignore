@@ -9,3 +9,5 @@ node_modules/
 /.agent
 /img
 release.ps1
+AI_PROJECT_HANDBOOK.md
+test_env_flows.js

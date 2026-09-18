@@ -8,10 +8,12 @@ The **Android Automotive** companion app bridges the gap between your car's info
 
 ## ✨ Key Features
 
-- **Secure OAuth2 Relay**: Facilitates the QR code-based pairing process between the car and your Homey account.
+- **Secure OAuth2 Relay & Session Management**: Facilitates the QR code-based pairing process between the car and your Homey account with transparent session renewal.
+- **Flow Execution Proxy**: Securely triggers Standard and Advanced Homey Flows invoked from the car using the official HomeyScript app integration.
+- **Proximity Geofence Support**: Reports Homey Pro location and exposes user-selected barrier devices for departure alerts and arrival prompts.
+- **Climate & Sensor Classification**: Provides temperature sensor mapping (indoor vs outdoor) for in-car climate widgets.
+- **Diagnostic File Logging**: Robust rotatable persistent logging system with download and management tools in the app settings.
 - **Device Management**: Allows you to configure which devices and zones are visible on your car's dashboard.
-- **Optimized Data Provider**: Serves filtered device states and manual flows specifically for the AAOS client.
-- **Low Latency**: Uses Homey's native Web API for fast and reliable communication.
 
 ## 🏗️ Architecture
 
@@ -35,7 +37,7 @@ The car app communicates with this companion app via a secure, authenticated bri
    ```
 3. Run the app in development mode:
    ```bash
-   homey app run --r
+   homey app run
    ```
 
 ### Staging/Production
@@ -46,11 +48,17 @@ homey app install
 
 ## 🛠️ API Endpoints
 
-This app exposes several public (OAuth2 protected) endpoints used by the AAOS client:
-- `POST /auth/start`: Initiates the pairing process.
-- `GET /auth/poll`: Polls for authorization status.
+This app exposes endpoints used by the AAOS client:
+- `POST /auth/start`: Initiates the pairing process and generates the QR code URL.
+- `GET /auth/poll`: Polls for one-time token delivery upon user authorization.
+- `POST /auth/refresh`: Refreshes and rotates the hub session token silently.
+- `POST /flow/trigger`: Executes a Standard or Advanced Flow via the HomeyScript proxy.
+- `GET /location`: Retrieves Homey Pro coordinates for in-car geofencing.
+- `GET /geofence`: Retrieves configured proximity barrier device IDs.
+- `GET /thermometers`: Retrieves thermometer climate classification configuration.
 - `GET /devices`: Retrieves the list of devices configured for car access.
 - `GET /zones`: Retrieves the room hierarchy.
+- `GET /dashboards`: Retrieves virtual dashboard configuration.
 
 ## 📄 License
 

@@ -11,22 +11,69 @@
   "error_token_exchange": "Failed to exchange authorization code for access token.",
   "settings": {
     "menu": {
+      "title": "Android Automotive Settings",
       "home_config_title": "Home Tab Configuration",
-      "home_config_desc": "Choose which lights and locks to show in your car's Home screen."
+      "home_config_desc": "Choose which lights and locks to show in your car's Home screen.",
+      "geofence_title": "Proximity Alerts",
+      "geofence_desc": "Choose up to 3 gates or garage doors to monitor upon arrival and departure.",
+      "climate_title": "Thermometers & Climate",
+      "climate_desc": "Configure which sensors to consider for indoor and outdoor temperatures.",
+      "debug_title": "Debug & Diagnostics",
+      "debug_desc": "Manage debug logging and diagnostic options."
+    },
+    "climate": {
+      "title": "Thermometers & Climate",
+      "subtitle": "Define whether each sensor measures indoor or outdoor temperature.",
+      "notice_info": "Sensors excluded from climate on Homey are automatically ignored. Here you can specify which sensors measure indoor or outdoor temperature for your car.",
+      "search_placeholder": "Search thermometer",
+      "mode_indoor": "Indoor",
+      "mode_outdoor": "Outdoor",
+      "loading": "Loading thermometers...",
+      "no_thermometers": "No temperature sensors found."
+    },
+    "debug": {
+      "title": "Debug & Diagnostics",
+      "subtitle": "Enable verbose diagnostic logs for troubleshooting integration issues.",
+      "notice_info": "Debug logging produces detailed execution traces. All sensitive credentials, tokens, and GPS coordinates are masked automatically in accordance with security guidelines.",
+      "enable_label": "Debug Logging",
+      "enable_desc": "Record verbose operational logs for API requests and device filtering.",
+      "files_heading": "Stored Diagnostic Logs",
+      "btn_refresh": "Refresh",
+      "btn_clear_all": "Clear All",
+      "btn_download": "Download",
+      "btn_delete": "Delete",
+      "loading_files": "Loading log files...",
+      "no_files": "No diagnostic log files found.",
+      "download_error": "Failed to generate log download URL",
+      "confirm_delete_file": "Are you sure you want to delete {0}?",
+      "confirm_clear_all": "Are you sure you want to delete all diagnostic log files?",
+      "msg_file_deleted": "Log file deleted successfully.",
+      "msg_cleared": "All log files cleared successfully."
     },
     "home_config": {
       "title": "Home Tab Devices",
       "subtitle": "Select up to 9 devices. If none are selected your Favorite devices will be shown.",
+      "homeyscript_alert": "To run Homey Flows from Android Automotive, make sure the official HomeyScript app is installed on your Homey Pro.",
       "search_placeholder": "Search device",
       "max_reached": "You have reached the maximum limit of 9 devices.",
       "loading": "Loading devices...",
       "no_devices": "No lights or locks found."
     },
+    "geofence": {
+      "title": "Proximity Alert Barriers",
+      "subtitle": "Enable alerts for gates or garage doors you want to control. Each active barrier will have a dedicated action button in the vehicle notification.",
+      "notice_info": "All barriers are disabled by default. Toggle the switch only for gates or garage doors (maximum 3) you want to control from your car.",
+      "search_placeholder": "Search gate or garage door",
+      "max_reached": "You can enable a maximum of 3 barriers for vehicle notifications.",
+      "loading": "Loading barriers...",
+      "no_barriers": "No gates, garage doors, or locks found."
+    },
     "common": {
       "save": "Save",
       "back": "Back",
       "back_to_menu": "← Back to Settings",
-      "saved": "Settings saved successfully!"
+      "saved": "Settings saved successfully!",
+      "error_generic": "An error occurred while saving."
     }
   }
 }

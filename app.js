@@ -2,6 +2,8 @@
 
 const Homey = require('homey');
 
+const LogManager = require('./lib/LogManager');
+
 /** @constant {string} TAG - Log tag used in all messages emitted by this class. */
 const TAG = 'HomeyAaosCompanionApp';
 
@@ -55,6 +57,13 @@ class HomeyAaosCompanionApp extends Homey.App {
    */
   _sessions = new Map();
 
+  /**
+   * Cached identifier of the HomeyScript execution proxy script.
+   * @private
+   * @type {string|null}
+   */
+  _homeyScriptProxyId = null;
+
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   /**
@@ -64,7 +73,32 @@ class HomeyAaosCompanionApp extends Homey.App {
    * @returns {Promise<void>}
    */
   async onInit() {
-    this.log(`${TAG}: Homey AAOS Companion App initialized.`);
+    this._logManager = new LogManager(this);
+    await this._logManager.init();
+
+    this.log(`[${TAG}:onInit] Homey AAOS Companion App initialized.`);
+
+
+    try {
+      const lat = this.homey.geolocation.getLatitude();
+      const lng = this.homey.geolocation.getLongitude();
+      this.log(`[${TAG}:onInit] Home location configured: lat=***, lng=***`);
+    } catch (err) {
+      this.log(`[${TAG}:onInit] Home location not configured or unavailable: ${err.message}`);
+    }
+
+    const isDebug = this.isDebugLoggingEnabled();
+    this.log(`[${TAG}:onInit] Debug logging is ${isDebug ? 'ENABLED' : 'DISABLED'}.`);
+
+    this.homey.settings.on('set', async (key) => {
+      if (key === 'debug_logging_enabled') {
+        const state = this.isDebugLoggingEnabled();
+        if (this._logManager) {
+          await this._logManager.setDebugEnabled(state);
+        }
+        this.log(`[${TAG}:onInit] Debug logging state changed: ${state ? 'ENABLED' : 'DISABLED'}`);
+      }
+    });
   }
 
   // ── Public Methods (called from api.js) ────────────────────────────────────
@@ -95,15 +129,15 @@ class HomeyAaosCompanionApp extends Homey.App {
     // Invalidate any pre-existing session for this ID
     this._destroySession(sessionId);
 
-    this.log(`${TAG}: Creating OAuth2 callback for session ${sessionId.substring(0, 8)}...`);
+    this.log(`[${TAG}:startAuthSession] Creating OAuth2 callback for session ${sessionId.substring(0, 8)}...`);
 
     const clientId = Homey.env.CLIENT_ID;
+    const homeyId = await this.homey.cloud.getHomeyId();
     const scopes = [
       'homey.zone.readonly',
       'homey.device.readonly',
       'homey.device.control',
       'homey.flow.readonly',
-      'homey.flow.start',
       'homey.user.self',
     ].join(' ');
 
@@ -119,11 +153,11 @@ class HomeyAaosCompanionApp extends Homey.App {
       this.homey.cloud.createOAuth2Callback(baseAuthUrl)
         .then((oauthCallback) => {
           oauthCallback.on('url', (authUrl) => {
-            this.log(`${TAG}: Auth URL generated for session ${sessionId.substring(0, 8)}...`);
+            this.log(`[${TAG}:startAuthSession] Auth URL generated for session ${sessionId.substring(0, 8)}...: ${authUrl}`);
 
             // Store session in memory
             const timer = setTimeout(() => {
-              this.log(`${TAG}: Session ${sessionId.substring(0, 8)}... expired.`);
+              this.log(`[${TAG}:startAuthSession] Session ${sessionId.substring(0, 8)}... expired.`);
               this._sessions.delete(sessionId);
             }, SESSION_TTL_MS);
 
@@ -176,7 +210,7 @@ class HomeyAaosCompanionApp extends Homey.App {
     if (session.status === 'complete') {
       // One-time delivery: delete session immediately after token is retrieved
       this._destroySession(sessionId);
-      this.log(`${TAG}: Token delivered and session ${sessionId.substring(0, 8)}... deleted.`);
+      this.log(`[${TAG}:pollAuthSession] Token delivered and session ${sessionId.substring(0, 8)}... deleted.`);
       return { status: 'complete', token: session.token };
     }
 
@@ -226,7 +260,7 @@ class HomeyAaosCompanionApp extends Homey.App {
       }
 
       const token = await response.json();
-      this.log(`${TAG}: Token exchange successful for session ${sessionId.substring(0, 8)}...`);
+      this.log(`[${TAG}:_exchangeCode] Token exchange successful for session ${sessionId.substring(0, 8)}...`);
 
       // Fetch user profile using the new access token.
       let userResponse = null;
@@ -235,51 +269,51 @@ class HomeyAaosCompanionApp extends Homey.App {
         
         if (uRes.ok) userResponse = await uRes.json();
 
-        this.log(`${TAG}: User profile fetched successfully.`);
+        this.log(`[${TAG}:_exchangeCode] User profile fetched successfully.`);
         
-        let sessionToken = null;
-        let homeyId = null;
-        let homeyApiUrl = null;
+        const homeyId = await this.homey.cloud.getHomeyId();
+        const homeyApiUrl = `https://${homeyId}.connect.athom.com/api/`;
         let localHomeyName = 'Homey';
+
+        const ownerSessionToken = await this.homey.api.getOwnerApiToken();
+
+        // Retrieve the hub's user-defined system name locally via the REST API using the Owner token.
         try {
-          sessionToken = await this.homey.api.getOwnerApiToken();
-          homeyId = await this.homey.cloud.getHomeyId();
-          homeyApiUrl = `https://${homeyId}.connect.athom.com/api/`;
-
-          // Retrieve the hub's user-defined system name via the local REST API.
-          // GET /api/manager/system/name returns the name set by the user (e.g. "Veggia").
-          // We use the cloud URL since the Companion App runs on-device (no LAN required).
-          try {
-            const nameRes = await fetch(`${homeyApiUrl}manager/system/name`, {
-              headers: { Authorization: `Bearer ${sessionToken}` }
-            });
-            if (nameRes.ok) {
-              const nameData = await nameRes.json();
-              // The response can be a plain string or an object with a `name` property
-              if (typeof nameData === 'string' && nameData) {
-                localHomeyName = nameData;
-              } else if (nameData && nameData.name) {
-                localHomeyName = nameData.name;
-              }
-            } else {
-              this.error(`${TAG}: Could not fetch system name. Status: ${nameRes.status}`);
+          const localUrl = await this.homey.api.getLocalUrl();
+          const nameRes = await fetch(`${localUrl}/api/manager/system`, {
+            headers: { Authorization: `Bearer ${ownerSessionToken}` },
+          });
+          if (nameRes.ok) {
+            const nameData = await nameRes.json();
+            if (nameData && nameData.name) {
+              localHomeyName = nameData.name;
             }
-          } catch (nameErr) {
-            this.error(`${TAG}: Failed to fetch system name:`, nameErr);
           }
+        } catch (nameErr) {
+          this.log(`[${TAG}:_exchangeCode] Could not fetch local system name, using default: ${nameErr.message}`);
+        }
 
-          this.log(`${TAG}: Owner API token obtained for session ${sessionId.substring(0, 8)}... (Hub Name: ${localHomeyName})`);
-        } catch (tokenErr) {
-          this.error(`${TAG}: Failed to obtain owner API token:`, tokenErr);
+        this.log(`[${TAG}:_exchangeCode] Hub info obtained for session ${sessionId.substring(0, 8)}... (Hub Name: ${localHomeyName})`);
+
+        let homeLocation = null;
+        try {
+          const lat = this.homey.geolocation.getLatitude();
+          const lng = this.homey.geolocation.getLongitude();
+          if (typeof lat === 'number' && typeof lng === 'number') {
+            homeLocation = { latitude: lat, longitude: lng };
+          }
+        } catch (geoErr) {
+          this.error(`[${TAG}:_exchangeCode] Failed to get geolocation for token:`, geoErr.message);
         }
 
         session.status = 'complete';
         session.token = {
-          session_token: sessionToken,
+          session_token: ownerSessionToken,
           homey_id: homeyId,
           homey_name: localHomeyName,
           homey_api_url: homeyApiUrl,
           athom_refresh_token: token.refresh_token,
+          location: homeLocation,
           user: userResponse ? {
             id: userResponse.id || userResponse._id || userResponse.athomId || 'unknown',
             name: userResponse.name || userResponse.fullname || `${userResponse.firstname || ''} ${userResponse.lastname || ''}`.trim() || 'Homey User',
@@ -288,16 +322,14 @@ class HomeyAaosCompanionApp extends Homey.App {
         };
 
         if (userResponse) {
-          const debugProfile = { ...userResponse };
-          if (debugProfile.email) debugProfile.email = '***@***.***';
-          this.log(`${TAG}: Profile keys: ${Object.keys(userResponse).join(', ')}`);
+          this.log(`[${TAG}:_exchangeCode] Profile keys retrieved: ${Object.keys(userResponse).join(', ')}`);
         }
       } catch (fetchErr) {
-        this.error(`${TAG}: Error fetching profile/homeys from Athom:`, fetchErr);
+        this.error(`[${TAG}:_exchangeCode] Error fetching user profile from Athom:`, fetchErr.message || fetchErr);
         session.status = 'error';
       }
     } catch (err) {
-      this.error(`${TAG}: Token exchange failed for session ${sessionId.substring(0, 8)}...`, err);
+      this.error(`[${TAG}:_exchangeCode] Token exchange failed for session ${sessionId.substring(0, 8)}...:`, err.message || err);
       session.status = 'error';
     }
   }
@@ -317,11 +349,10 @@ class HomeyAaosCompanionApp extends Homey.App {
   }
 
   /**
-   * Refreshes the owner API token using the Athom Cloud OAuth2 refresh_token.
+   * Refreshes the OAuth access token using the Athom Cloud OAuth2 refresh_token.
    *
-   * Verifies the token by exchanging it with Athom Cloud. If Athom returns a new token pair,
-   * we consider the request authenticated, generate a new local owner API (session) token,
-   * and return it to the caller along with the new Athom refresh_token.
+   * Verifies the token by exchanging it with Athom Cloud. When Athom returns a new token pair,
+   * returns the refreshed tokens to the caller for ongoing API operations.
    *
    * @public
    * @param {string} athomRefreshToken - The refresh_token from the Athom Cloud.
@@ -349,28 +380,260 @@ class HomeyAaosCompanionApp extends Homey.App {
 
       if (!response.ok) {
         const text = await response.text();
-        this.error(`${TAG}: Athom refresh_token exchange failed. Status: ${response.status}`, text);
+        this.error(`[${TAG}:refreshAuthSession] Athom refresh_token exchange failed. Status: ${response.status}`, text);
         throw Object.assign(new Error('Invalid or expired athom_refresh_token.'), { statusCode: 401 });
       }
 
       // We successfully got a new OAuth token pair from Athom
       const newAthomTokens = await response.json();
 
-      // 2. Generate a new local session token
+      this.log(`[${TAG}:refreshAuthSession] OAuth token successfully refreshed via Athom Cloud.`);
+
+      // Generate a fresh local owner session token for Homey Pro
       const newSessionToken = await this.homey.api.getOwnerApiToken();
-      
-      this.log(`${TAG}: Owner API token successfully refreshed via Athom Cloud.`);
-      
-      // Return both the new session token and the newly rotated Athom refresh_token
+
       return {
         session_token: newSessionToken,
-        athom_refresh_token: newAthomTokens.refresh_token
+        athom_refresh_token: newAthomTokens.refresh_token,
       };
     } catch (err) {
       if (err.statusCode === 401) throw err;
-      this.error(`${TAG}: Failed to refresh owner API token:`, err);
+      this.error(`[${TAG}:refreshAuthSession] Failed to refresh auth session:`, err.message || err);
       throw Object.assign(new Error('Internal error during token refresh.'), { statusCode: 500 });
     }
+  }
+
+  /**
+   * Ensures a HomeyScript proxy script exists on the local Homey Pro hub and returns its ID.
+   *
+   * Queries the official Athom HomeyScript app (`com.athom.homeyscript`).
+   * If the app is missing (HTTP 404), throws an error with `code: 'HOMEYSCRIPT_NOT_INSTALLED'`.
+   * If the dedicated `AAOS-FlowTrigger` script is missing, creates it automatically.
+   *
+   * @private
+   * @returns {Promise<{scriptId: string}>} The script identifier to execute.
+   * @throws {Error} If HomeyScript is not installed or script proxy creation fails.
+   */
+  async _ensureHomeyScriptProxy() {
+    if (this._homeyScriptProxyId) {
+      return { scriptId: this._homeyScriptProxyId };
+    }
+
+    const localUrl = await this.homey.api.getLocalUrl();
+    const ownerToken = await this.homey.api.getOwnerApiToken();
+
+    try {
+      const response = await fetch(`${localUrl}/api/app/com.athom.homeyscript/script`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${ownerToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          const err = new Error('HomeyScript app is not installed on Homey Pro.');
+          err.code = 'HOMEYSCRIPT_NOT_INSTALLED';
+          err.statusCode = 404;
+          throw err;
+        }
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const scripts = await response.json();
+      const existing = Object.values(scripts).find(s => s && s.name === 'AAOS-FlowTrigger');
+      if (existing) {
+        this._homeyScriptProxyId = existing.id;
+        this.log(`[${TAG}:_ensureHomeyScriptProxy] Found existing HomeyScript proxy script: ${this._homeyScriptProxyId}`);
+        return { scriptId: this._homeyScriptProxyId };
+      }
+    } catch (err) {
+      if (err.code === 'HOMEYSCRIPT_NOT_INSTALLED') throw err;
+      this.log(`[${TAG}:_ensureHomeyScriptProxy] Could not list existing scripts, will attempt creation: ${err.message}`);
+    }
+
+    try {
+      const createResponse = await fetch(`${localUrl}/api/app/com.athom.homeyscript/script`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${ownerToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'AAOS-FlowTrigger',
+          code: '// Flow trigger proxy for AAOS Companion App\n// Managed by com.dimapp.aaos\n',
+        }),
+      });
+
+      if (!createResponse.ok) {
+        if (createResponse.status === 404) {
+          const err = new Error('HomeyScript app is not installed on Homey Pro.');
+          err.code = 'HOMEYSCRIPT_NOT_INSTALLED';
+          err.statusCode = 404;
+          throw err;
+        }
+        throw new Error(`HTTP ${createResponse.status}: ${createResponse.statusText}`);
+      }
+
+      const newScript = await createResponse.json();
+      this._homeyScriptProxyId = newScript.id;
+      this.log(`[${TAG}:_ensureHomeyScriptProxy] Created HomeyScript proxy script: ${this._homeyScriptProxyId}`);
+      return { scriptId: this._homeyScriptProxyId };
+    } catch (err) {
+      if (err.code === 'HOMEYSCRIPT_NOT_INSTALLED') throw err;
+      throw new Error(`Failed to create HomeyScript proxy script: ${err.message}`);
+    }
+  }
+
+  /**
+   * Executes arbitrary JavaScript snippet inside the privileged HomeyScript runtime.
+   *
+   * @private
+   * @param {string} code - The JavaScript snippet to run inside HomeyScript.
+   * @returns {Promise<any>} The return value from HomeyScript execution.
+   * @throws {Error} If HomeyScript is not installed or script execution fails.
+   */
+  async _executeHomeyScript(code) {
+    const { scriptId } = await this._ensureHomeyScriptProxy();
+    const localUrl = await this.homey.api.getLocalUrl();
+    const ownerToken = await this.homey.api.getOwnerApiToken();
+
+    const response = await fetch(`${localUrl}/api/app/com.athom.homeyscript/script/${scriptId}/run`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ code }),
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        const err = new Error('HomeyScript app is not installed on Homey Pro.');
+        err.code = 'HOMEYSCRIPT_NOT_INSTALLED';
+        err.statusCode = 404;
+        throw err;
+      }
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    if (!result.success) {
+      const errorMsg = result.returns?.message || result.error || 'HomeyScript execution failed';
+      throw new Error(errorMsg);
+    }
+    return result.returns;
+  }
+
+  /**
+   * Triggers a standard or advanced Homey flow via the privileged HomeyScript proxy.
+   *
+   * @public
+   * @param {string} flowId - The UUID of the target Flow.
+   * @param {boolean} [isAdvanced=false] - Whether the target flow is an Advanced Flow.
+   * @param {object} [args={}] - Optional arguments to pass to the flow.
+   * @returns {Promise<{success: boolean, message: string}>} Result of the operation.
+   * @throws {Error} If the flow UUID is invalid or execution fails.
+   * @example
+   * await homey.app.triggerFlow('123e4567-e89b-12d3-a456-426614174000', true);
+   */
+  async triggerFlow(flowId, isAdvanced = false, args = {}) {
+    if (!flowId || typeof flowId !== 'string') {
+      throw new Error('Missing or invalid flowId parameter.');
+    }
+
+    const method = isAdvanced ? 'triggerAdvancedFlow' : 'triggerFlow';
+    const argsStr = args && Object.keys(args).length > 0 ? JSON.stringify(args) : 'null';
+    const code = `await Homey.flow.${method}({ id: "${flowId}" }, ${argsStr});`;
+
+    this.log(`[${TAG}:triggerFlow] Executing flow '${flowId}' (isAdvanced=${isAdvanced}) via HomeyScript proxy...`);
+    await this._executeHomeyScript(code);
+    this.log(`[${TAG}:triggerFlow] Flow '${flowId}' triggered successfully.`);
+
+    return { success: true, message: 'Flow triggered successfully.' };
+  }
+
+
+
+
+  /**
+   * Checks whether debug logging is currently enabled in settings.
+   *
+   * @public
+   * @returns {boolean} True if debug logging is enabled.
+   * @example
+   * if (this.isDebugLoggingEnabled()) {
+   *   // perform verbose operations
+   * }
+   */
+  isDebugLoggingEnabled() {
+    return Boolean(this.homey.settings.get('debug_logging_enabled'));
+  }
+
+  /**
+   * Retrieves the LogManager instance.
+   *
+   * @public
+   * @returns {LogManager} The LogManager instance.
+   * @example
+   * const logManager = homey.app.getLogManager();
+   */
+  getLogManager() {
+    return this._logManager;
+  }
+
+  /**
+   * Emits a structured debug log message if debug logging is enabled in settings.
+   * Adheres strictly to the logging system guidelines:
+   * - Format: [ClassName:methodName] message
+   * - English language only
+   * - Automatic sanitization of sensitive PII, credentials, and coordinates
+   * - Prohibition of emoticons and non-textual symbols
+   *
+   * @public
+   * @param {string} tag - Context identifier, e.g. 'ClassName:methodName'.
+   * @param {...any} args - Log message or objects to output.
+   * @returns {void}
+   * @example
+   * this.debugLog('api:getDevices', 'Filtering device:', device.name);
+   */
+  debugLog(tag, ...args) {
+    if (!this.isDebugLoggingEnabled()) return;
+    const sanitizedArgs = args.map(arg => this._sanitizeLogPayload(arg));
+    this.log(`[DEBUG] [${tag}]`, ...sanitizedArgs);
+    if (this._logManager) {
+      this._logManager.writeLog('DEBUG', tag, sanitizedArgs.join(' '));
+    }
+  }
+
+  /**
+   * Sanitizes a log payload by masking sensitive tokens, passwords, emails, and GPS coordinates.
+   *
+   * @private
+   * @param {any} payload - Data payload to sanitize.
+   * @returns {any} Sanitized payload safe for logging.
+   */
+  _sanitizeLogPayload(payload) {
+    if (payload === null || payload === undefined) return payload;
+    if (typeof payload === 'string') {
+      return payload
+        .replace(/\bBearer\s+[A-Za-z0-9\-._~+/]+/gi, 'Bearer ***MASKED***')
+        .replace(/\b(password|client_secret|access_token|refresh_token|token)(["']?\s*[:=]\s*["']?)([^"'\s&,;]{1,500})(["']?)/gi, '$1$2***MASKED***$4')
+        .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,10}\b/gi, '***@***.***')
+        .replace(/lat(itude)?\s*[:=]\s*-?\d+(\.\d+)?/gi, 'lat=***')
+        .replace(/lng|long(itude)?\s*[:=]\s*-?\d+(\.\d+)?/gi, 'lng=***');
+    }
+    if (typeof payload === 'object') {
+      try {
+        const str = JSON.stringify(payload);
+        const sanitizedStr = this._sanitizeLogPayload(str);
+        return JSON.parse(sanitizedStr);
+      } catch (err) {
+        return '[Complex Object]';
+      }
+    }
+    return payload;
   }
 }
 

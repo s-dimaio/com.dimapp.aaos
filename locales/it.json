@@ -11,22 +11,69 @@
   "error_token_exchange": "Impossibile scambiare il codice di autorizzazione con un access token.",
   "settings": {
     "menu": {
+      "title": "Impostazioni Android Automotive",
       "home_config_title": "Configurazione Tab Home",
-      "home_config_desc": "Scegli quali luci e serrature mostrare nella Home della tua auto."
+      "home_config_desc": "Scegli quali luci e serrature mostrare nella Home della tua auto.",
+      "geofence_title": "Avvisi di Prossimità",
+      "geofence_desc": "Scegli fino a 3 cancelli o garage da controllare all'arrivo e alla partenza.",
+      "climate_title": "Termometri & Clima",
+      "climate_desc": "Configura quali sensori considerare per la temperatura interna ed esterna.",
+      "debug_title": "Debug e Diagnostica",
+      "debug_desc": "Gestisci i log di debug e le opzioni diagnostiche."
+    },
+    "climate": {
+      "title": "Termometri & Clima",
+      "subtitle": "Definisci se ciascun sensore rileva la temperatura interna o esterna.",
+      "notice_info": "I sensori esclusi dal clima su Homey vengono ignorati automaticamente. Qui puoi specificare quali sensori rilevano la temperatura interna o esterna per l'auto.",
+      "search_placeholder": "Cerca termometro",
+      "mode_indoor": "Interno",
+      "mode_outdoor": "Esterno",
+      "loading": "Caricamento termometri...",
+      "no_thermometers": "Nessun sensore di temperatura trovato."
+    },
+    "debug": {
+      "title": "Debug e Diagnostica",
+      "subtitle": "Abilita i log diagnostici dettagliati per facilitare la risoluzione dei problemi.",
+      "notice_info": "I log di debug producono tracce dettagliate delle operazioni. Tutti i dati sensibili, credenziali, token e coordinate GPS vengono automaticamente oscurati nel rispetto delle linee guida di sicurezza.",
+      "enable_label": "Log di Debug",
+      "enable_desc": "Registra log dettagliati per le richieste API e il filtraggio dei dispositivi.",
+      "files_heading": "File di Log Diagnostici",
+      "btn_refresh": "Aggiorna",
+      "btn_clear_all": "Elimina tutti",
+      "btn_download": "Scarica",
+      "btn_delete": "Elimina",
+      "loading_files": "Caricamento file di log...",
+      "no_files": "Nessun file di log presente.",
+      "download_error": "Impossibile generare il link per il download",
+      "confirm_delete_file": "Sei sicuro di voler eliminare {0}?",
+      "confirm_clear_all": "Sei sicuro di voler eliminare tutti i file di log?",
+      "msg_file_deleted": "File di log eliminato con successo.",
+      "msg_cleared": "Tutti i file di log sono stati eliminati."
     },
     "home_config": {
       "title": "Dispositivi Tab Home",
       "subtitle": "Seleziona fino a 9 dispositivi. Se non ne selezioni nessuno verranno mostrati i tuoi Dispositivi Preferiti.",
+      "homeyscript_alert": "Per eseguire i Flow di Homey da Android Automotive, assicurati che l'app ufficiale HomeyScript sia installata su Homey Pro.",
       "search_placeholder": "Cerca dispositivo",
       "max_reached": "Hai raggiunto il limite massimo di 9 dispositivi.",
       "loading": "Caricamento dispositivi...",
       "no_devices": "Nessuna luce o serratura trovata."
     },
+    "geofence": {
+      "title": "Varchi per Avvisi di Prossimità",
+      "subtitle": "Attiva gli avvisi per i cancelli o garage che desideri controllare. Ogni varco attivo avrà un pulsante dedicato nella notifica dell'auto.",
+      "notice_info": "Tutti i varchi sono disattivati di default. Attiva lo switch solo per i cancelli o garage (massimo 3) che desideri aprire o chiudere dall'auto.",
+      "search_placeholder": "Cerca cancello o garage",
+      "max_reached": "Puoi attivare al massimo 3 varchi per le notifiche dell'auto.",
+      "loading": "Caricamento varchi...",
+      "no_barriers": "Nessun cancello, garage o serratura trovato."
+    },
     "common": {
       "save": "Salva",
       "back": "Indietro",
       "back_to_menu": "← Torna alle Impostazioni",
-      "saved": "Impostazioni salvate con successo!"
+      "saved": "Impostazioni salvate con successo!",
+      "error_generic": "Si è verificato un errore durante il salvataggio."
     }
   }
 }

@@ -108,6 +108,51 @@ async function refreshAuth({ homey, body }) {
   return homey.app.refreshAuthSession(athomRefreshToken);
 }
 
+/**
+ * Handles `POST /flow/trigger`.
+ *
+ * Triggers a standard or advanced Homey Flow using the local HomeyScript execution proxy.
+ *
+ * @public
+ * @param {object} args - Handler arguments provided by the Homey runtime.
+ * @param {import('homey').Homey} args.homey - The Homey instance.
+ * @param {object} args.body - The parsed JSON request body.
+ * @param {string} args.body.id - The UUID of the flow to trigger (mandatory).
+ * @param {boolean} [args.body.isAdvanced=false] - Whether the target is an Advanced Flow.
+ * @param {object} [args.body.args] - Optional arguments to pass to the flow.
+ * @returns {Promise<{success: boolean, message: string}>} Result of the trigger operation.
+ * @throws {Error} If id is missing or execution fails.
+ * @example
+ * // Request:
+ * // POST https://{homeyId}.connect.athom.com/api/app/com.dimapp.aaos/flow/trigger
+ * // Content-Type: application/json
+ * // { "id": "123e4567-e89b-12d3-a456-426614174000", "isAdvanced": true }
+ * //
+ * // Response:
+ * // { "success": true, "message": "Flow triggered successfully." }
+ */
+async function triggerFlow({ homey, body }) {
+  const { id, isAdvanced, args } = body ?? {};
+
+  if (!id || typeof id !== 'string') {
+    throw Object.assign(new Error('Missing or invalid required parameter: id.'), { statusCode: 400 });
+  }
+
+  homey.app.log(`[api:triggerFlow] Trigger request received for flow '${id}' (isAdvanced=${Boolean(isAdvanced)})`);
+
+  try {
+    const result = await homey.app.triggerFlow(id, Boolean(isAdvanced), args);
+    return result;
+  } catch (err) {
+    homey.app.error(`[api:triggerFlow] Failed to trigger flow '${id}':`, err.message);
+    const statusCode = err.statusCode || (err.code === 'HOMEYSCRIPT_NOT_INSTALLED' ? 404 : 500);
+    throw Object.assign(new Error(err.message || 'Failed to trigger flow.'), {
+      statusCode,
+      code: err.code || 'FLOW_TRIGGER_FAILED',
+    });
+  }
+}
+
 async function getDashboards({ homey }) {
   homey.app.log('[api] getDashboards request received');
   
@@ -192,7 +237,9 @@ async function getDevices({ homey }) {
     const isDoor  = effectiveClass === 'lock' || effectiveClass === 'garagedoor' || effectiveClass === 'doorbell';
 
     if (isLight || isDoor) {
-      homey.app.log(`[api] Device accepted: ${device.name} (class=${effectiveClass})`);
+      if (typeof homey.app.debugLog === 'function') {
+        homey.app.debugLog('api:getDevices', `Device accepted: ${device.name} (class=${effectiveClass})`);
+      }
       filtered[id] = {
         id: device.id,
         name: device.name,
@@ -202,7 +249,7 @@ async function getDevices({ homey }) {
     }
   }
   
-  homey.app.log(`[api] getDevices complete. Returning ${Object.keys(filtered).length} filtered devices.`);
+  homey.app.log(`[api:getDevices] Returned ${Object.keys(filtered).length} filtered devices.`);
   return filtered;
 }
 
@@ -211,7 +258,7 @@ async function getDevices({ homey }) {
  * Used by the settings page.
  */
 async function getZones({ homey }) {
-  homey.app.log('[api] getZones proxy called');
+  homey.app.log('[api:getZones] Proxy request received');
   
   const localUrl = await homey.api.getLocalUrl();
   const token = await homey.api.getOwnerApiToken();
@@ -222,11 +269,336 @@ async function getZones({ homey }) {
   
   if (!response.ok) {
     const errorBody = await response.text().catch(() => 'no body');
-    console.error(`[HomeyAaosCompanionApp] getZones proxy failed with status: ${response.status}. Details: ${errorBody}`);
+    homey.app.error(`[api:getZones] Proxy failed with status: ${response.status}. Details: ${errorBody}`);
     throw new Error(`Local API fetch failed with status: ${response.status}`);
   }
   
   return response.json();
 }
 
-module.exports = { startAuth, pollAuth, refreshAuth, getDashboards, getDevices, getZones };
+/**
+ * Handles `GET /location`.
+ *
+ * Retrieves the geographical coordinates of the Homey Pro hub configured in the
+ * Homey location settings. Used by the AAOS app to establish geofencing perimeters.
+ *
+ * @public
+ * @param {object} args - Request arguments provided by Homey Web API.
+ * @param {import('homey').Homey} args.homey - The Homey application instance.
+ * @returns {Promise<{latitude: number, longitude: number}>} The geographic coordinates of the hub.
+ * @throws {Error} If geolocation is not configured or cannot be retrieved from Homey.
+ * @example
+ * // Request:
+ * // GET https://{homeyId}.connect.athom.com/api/app/com.dimapp.aaos/location
+ * //
+ * // Response:
+ * // { "latitude": 52.0907, "longitude": 5.1214 }
+ */
+async function getLocation({ homey }) {
+  homey.app.log('[api:getLocation] Location request received');
+  try {
+    const latitude = homey.geolocation.getLatitude();
+    const longitude = homey.geolocation.getLongitude();
+
+    if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+      homey.app.error('[api:getLocation] Geolocation values are not numbers or not configured.');
+      throw Object.assign(new Error('Homey geolocation is not configured.'), { statusCode: 404 });
+    }
+
+    homey.app.log('[api:getLocation] Geolocation retrieved: lat=***, lng=***');
+    return { latitude, longitude };
+  } catch (err) {
+    homey.app.error('[api:getLocation] Failed to get geolocation:', err.message);
+    throw Object.assign(new Error(`Failed to retrieve geolocation: ${err.message}`), {
+      statusCode: err.statusCode || 500,
+    });
+  }
+}
+
+module.exports = { startAuth, pollAuth, refreshAuth, getDashboards, getDevices, getZones, getLocation };
+/**
+ * Handles `GET /geofence`.
+ *
+ * Retrieves the barrier device IDs configured by the user in app settings
+ * for near-home proximity notifications.
+ *
+ * @public
+ * @param {object} args - Request arguments provided by Homey Web API.
+ * @param {import('homey').Homey} args.homey - The Homey application instance.
+ * @returns {Promise<{deviceIds: string[]}>} Configured barrier device IDs.
+ * @example
+ * // Request:
+ * // GET https://{homeyId}.connect.athom.com/api/app/com.dimapp.aaos/geofence
+ * //
+ * // Response:
+ * // { "deviceIds": ["abc-123", "def-456"] }
+ */
+async function getGeofenceConfig({ homey }) {
+  homey.app.log('[api:getGeofenceConfig] Geofence configuration requested');
+  const deviceIds = homey.settings.get('geofence_device_ids') || [];
+  homey.app.log(`[api:getGeofenceConfig] Returning ${deviceIds.length} configured barrier device IDs`);
+  return { deviceIds };
+}
+
+/**
+ * Handles `GET /thermometers`.
+ *
+ * Retrieves the thermometer classification configuration (indoor, outdoor)
+ * and the list of available devices with temperature measurement capabilities,
+ * filtering out any devices natively excluded from Homey climate (climate_exclude: true) or marked as hidden.
+ *
+ * @public
+ * @param {object} args - Request arguments provided by Homey Web API.
+ * @param {import('homey').Homey} args.homey - The Homey application instance.
+ * @returns {Promise<{config: Object.<string, string>, devices: Array<{id: string, name: string, zone: string}>}>}
+ * @example
+ * // Request:
+ * // GET https://{homeyId}.connect.athom.com/api/app/com.dimapp.aaos/thermometers
+ * //
+ * // Response:
+ * // { "config": { "dev-1": "indoor", "dev-2": "outdoor" }, "devices": [...] }
+ */
+async function getThermometersConfig({ homey }) {
+  homey.app.log('[api:getThermometersConfig] Thermometer configuration requested');
+  const config = homey.settings.get('thermometers_config') || {};
+
+  let thermometerDevices = [];
+  try {
+    const localUrl = await homey.api.getLocalUrl();
+    const token = await homey.api.getOwnerApiToken();
+    const res = await fetch(`${localUrl}/api/manager/devices/device`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      const allDevs = await res.json();
+      for (const dev of Object.values(allDevs)) {
+        const hasTemp = Array.isArray(dev.capabilities) && dev.capabilities.includes('measure_temperature');
+        const isClimateExcluded = dev.settings && dev.settings.climate_exclude === true;
+        const isHidden = dev.hidden === true;
+        if (hasTemp && !isClimateExcluded && !isHidden) {
+          thermometerDevices.push({
+            id: dev.id,
+            name: dev.name,
+            zone: dev.zone
+          });
+        }
+      }
+    }
+  } catch (err) {
+    homey.app.error('[api:getThermometersConfig] Failed to fetch thermometer devices:', err.message);
+  }
+
+  homey.app.log(`[api:getThermometersConfig] Returning ${Object.keys(config).length} configured entries, ${thermometerDevices.length} available devices.`);
+  return { config, devices: thermometerDevices };
+}
+
+const fs = require('fs');
+
+const MAX_LOG_BACKUPS = 2; // index 0 (active), 1, 2
+
+/**
+ * Returns standardized log file name based on rotation index.
+ *
+ * @private
+ * @param {number} index - Rotation index (0 for active, 1+ for backups).
+ * @returns {string} The log filename.
+ * @example
+ * const name = _getLogFileName(0); // 'app_debug.log'
+ */
+function _getLogFileName(index) {
+  return index === 0 ? 'app_debug.log' : `app_debug.${index}.log`;
+}
+
+/**
+ * Formats bytes into human-readable string.
+ *
+ * @private
+ * @param {number} bytes - Number of bytes.
+ * @returns {string} Formatted string, e.g. '1.2 MB'.
+ * @example
+ * const str = _formatBytes(1048576); // '1.0 MB'
+ */
+function _formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+/**
+ * Handles `GET /log/status`.
+ *
+ * Returns current logging status and list of stored log files.
+ *
+ * @public
+ * @param {object} args - Request arguments.
+ * @param {import('homey').Homey} args.homey - Homey app instance.
+ * @returns {Promise<object>} Status object containing file list and debug flag.
+ * @example
+ * // GET /api/app/com.dimapp.aaos/log/status
+ */
+async function getLogStatus({ homey }) {
+  try {
+    const logManager = homey.app.getLogManager ? homey.app.getLogManager() : null;
+    if (!logManager) {
+      return { exists: false, files: [], totalSize: 0, debugEnabled: false };
+    }
+
+    const files = [];
+    let totalSize = 0;
+
+    for (let i = 0; i <= MAX_LOG_BACKUPS; i++) {
+      const filePath = logManager.getLogFilePath(i);
+      if (fs.existsSync(filePath)) {
+        const stats = fs.statSync(filePath);
+        files.push({
+          index: i,
+          name: _getLogFileName(i),
+          path: filePath,
+          size: stats.size,
+          sizeFormatted: _formatBytes(stats.size),
+          modified: stats.mtime.toISOString(),
+          isCurrent: i === 0,
+        });
+        totalSize += stats.size;
+      }
+    }
+
+    return {
+      exists: files.length > 0,
+      files: files,
+      totalSize: totalSize,
+      totalSizeFormatted: _formatBytes(totalSize),
+      debugEnabled: logManager.isDebugEnabled(),
+    };
+  } catch (error) {
+    homey.app.error('[api:getLogStatus] Error:', error.message || error);
+    return { exists: false, error: error.message || error };
+  }
+}
+
+/**
+ * Handles `GET /log/download/:index`.
+ *
+ * Constructs and returns the direct local URL to download a diagnostic log file.
+ *
+ * @public
+ * @param {object} args - Request arguments.
+ * @param {import('homey').Homey} args.homey - Homey app instance.
+ * @param {object} args.params - URL route parameters.
+ * @param {string} args.params.index - File index to download.
+ * @returns {Promise<string>} Direct download URL.
+ * @throws {Error} If index is invalid or file does not exist.
+ * @example
+ * // GET /api/app/com.dimapp.aaos/log/download/0
+ */
+async function getLogDownloadFile({ homey, params }) {
+  try {
+    const index = parseInt(params.index, 10);
+    if (isNaN(index) || index < 0 || index > MAX_LOG_BACKUPS) {
+      throw Object.assign(new Error('Invalid file index'), { statusCode: 400 });
+    }
+
+    const logManager = homey.app.getLogManager();
+    const filePath = logManager.getLogFilePath(index);
+    const fileName = _getLogFileName(index);
+
+    if (!fs.existsSync(filePath)) {
+      throw Object.assign(new Error(`Log file not found: ${fileName}`), { statusCode: 404 });
+    }
+
+    const appId = homey.manifest ? homey.manifest.id : homey.app.id;
+    const localAddress = await homey.cloud.getLocalAddress();
+    const downloadUrl = `http://${localAddress}/app/${appId}/userdata/${fileName}`;
+
+    homey.app.log(`[api:getLogDownloadFile] Generated download URL for ${fileName}`);
+    return downloadUrl;
+  } catch (error) {
+    homey.app.error('[api:getLogDownloadFile] Error:', error.message || error);
+    throw error;
+  }
+}
+
+/**
+ * Handles `DELETE /log/:index`.
+ *
+ * Deletes a specific log file by rotation index.
+ *
+ * @public
+ * @param {object} args - Request arguments.
+ * @param {import('homey').Homey} args.homey - Homey app instance.
+ * @param {object} args.params - URL route parameters.
+ * @param {string} args.params.index - File index to delete.
+ * @returns {Promise<object>} Result object.
+ * @example
+ * // DELETE /api/app/com.dimapp.aaos/log/0
+ */
+async function deleteLogFile({ homey, params }) {
+  try {
+    if (params && params.index === 'all') {
+      return deleteAllLogs({ homey });
+    }
+
+    const index = parseInt(params.index, 10);
+    if (isNaN(index) || index < 0 || index > MAX_LOG_BACKUPS) {
+      throw Object.assign(new Error('Invalid file index'), { statusCode: 400 });
+    }
+
+    const logManager = homey.app.getLogManager();
+    const filePath = logManager.getLogFilePath(index);
+    const fileName = _getLogFileName(index);
+
+    if (index === 0) logManager.clearWriteQueue();
+    if (fs.existsSync(filePath)) {
+      await fs.promises.unlink(filePath).catch(() => {});
+    }
+
+    homey.app.log(`[api:deleteLogFile] Deleted log file: ${fileName}`);
+    return { success: true, deletedFile: fileName };
+  } catch (error) {
+    homey.app.error('[api:deleteLogFile] Error:', error.message || error);
+    return { success: false, error: error.message || error };
+  }
+}
+
+/**
+ * Handles `DELETE /log/all`.
+ *
+ * Clears and deletes all stored diagnostic log files.
+ *
+ * @public
+ * @param {object} args - Request arguments.
+ * @param {import('homey').Homey} args.homey - Homey app instance.
+ * @returns {Promise<object>} Result object.
+ * @example
+ * // DELETE /api/app/com.dimapp.aaos/log/all
+ */
+async function deleteAllLogs({ homey }) {
+  try {
+    const logManager = homey.app.getLogManager();
+    await logManager.clearLogs();
+    homey.app.log('[api:deleteAllLogs] All diagnostic log files cleared.');
+    return { success: true };
+  } catch (error) {
+    homey.app.error('[api:deleteAllLogs] Error:', error.message || error);
+    return { success: false, error: error.message || error };
+  }
+}
+
+module.exports = {
+  startAuth,
+  pollAuth,
+  refreshAuth,
+  triggerFlow,
+  getDashboards,
+  getDevices,
+  getZones,
+  getLocation,
+  getGeofenceConfig,
+  getThermometersConfig,
+  getLogStatus,
+  getLogDownloadFile,
+  deleteLogFile,
+  deleteAllLogs,
+};

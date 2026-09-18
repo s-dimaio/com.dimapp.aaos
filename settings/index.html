@@ -4,6 +4,31 @@
 <head>
   <script type="text/javascript" src="/homey.js" data-origin="settings"></script>
   <style>
+    :root {
+      --brand-color: #3DDC84;
+      --brand-color-hover: #32b86e;
+      --brand-color-light: rgba(61, 220, 132, 0.1);
+      --bg-card: rgba(255, 255, 255, 0.7);
+      --bg-card-hover: rgba(0, 0, 0, 0.03);
+      --bg-back-btn: #ffffff;
+      --text-primary: #333333;
+      --text-secondary: #666666;
+      --border-color: rgba(0, 0, 0, 0.1);
+      --border-light: rgba(0, 0, 0, 0.05);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-card: rgba(44, 44, 46, 0.7);
+        --bg-card-hover: rgba(255, 255, 255, 0.05);
+        --bg-back-btn: #2c2c2e;
+        --text-primary: #f2f2f7;
+        --text-secondary: #aeaeb2;
+        --border-color: rgba(255, 255, 255, 0.12);
+        --border-light: rgba(255, 255, 255, 0.06);
+      }
+    }
+
     body {
       display: flex;
       flex-direction: column;
@@ -11,6 +36,7 @@
       margin: 0;
       overflow-x: hidden;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text-primary);
     }
 
     .content {
@@ -19,8 +45,8 @@
       overflow-x: hidden;
       display: flex;
       flex-direction: column;
-      margin-left: 10px;
-      margin-right: 10px;
+      padding: 10px 15px 30px 15px;
+      box-sizing: border-box;
     }
 
     /* SPA view management */
@@ -32,11 +58,24 @@
       display: block;
     }
 
-    #view-selector.is-active {
+    #view-selector.is-active,
+    #view-geofence.is-active,
+    #view-climate.is-active {
       display: flex;
+      flex-direction: column;
+      height: 100vh;
     }
 
-    /* Main Menu list items (Gemini AI Style) */
+    /* Subtitle */
+    .subtitle {
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      margin-top: 6px;
+      margin-bottom: 20px;
+    }
+
+    /* Main Menu list items */
     .menu-list-container {
       display: flex;
       flex-direction: column;
@@ -48,18 +87,19 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      border: 1px solid rgba(0, 0, 0, 0.1);
-      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
       padding: 16px;
-      background-color: rgba(255, 255, 255, 0.5);
+      background-color: var(--bg-card);
       cursor: pointer;
-      transition: background-color 0.2s, transform 0.1s;
+      transition: background-color 0.2s, transform 0.1s, border-color 0.2s;
       text-decoration: none;
       color: inherit;
     }
 
     .menu-item:hover {
-      background-color: rgba(0, 0, 0, 0.04);
+      background-color: var(--bg-card-hover);
+      border-color: var(--brand-color);
     }
 
     .menu-item:active {
@@ -73,14 +113,13 @@
     }
 
     .menu-item-icon {
-      font-size: 24px;
-      width: 32px;
-      height: 32px;
+      width: 36px;
+      height: 36px;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #3DDC84;
-      /* AAOS Brand Color (Android Green) */
+      color: var(--brand-color);
+      flex-shrink: 0;
     }
 
     .menu-item-text {
@@ -92,12 +131,12 @@
     .menu-item-title {
       font-size: 16px;
       font-weight: 600;
-      color: #333;
+      color: var(--text-primary);
     }
 
     .menu-item-subtitle {
       font-size: 13px;
-      color: #666;
+      color: var(--text-secondary);
     }
 
     .menu-item-arrow {
@@ -106,28 +145,51 @@
       font-weight: bold;
     }
 
-    .subtitle {
-      font-size: 13px;
-      color: #666;
-      line-height: 1.5;
+    /* Top Back Button */
+    .back-item {
+      margin-bottom: 20px;
+      border-color: var(--border-color);
+      background-color: var(--bg-back-btn);
+      justify-content: flex-start;
+      gap: 10px;
+      padding: 12px 16px;
+    }
+
+    .back-item .menu-item-title {
+      color: var(--brand-color);
+    }
+
+    .back-item .menu-item-arrow {
+      color: var(--brand-color);
+    }
+
+    /* Notice Box */
+    .notice-box {
       margin-top: 10px;
       margin-bottom: 20px;
+      padding: 14px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .notice-box.info {
+      background-color: var(--brand-color-light);
+      border: 1px solid rgba(61, 220, 132, 0.3);
+      color: var(--text-primary);
     }
 
     /* Device Selector Styles */
     .search-container {
-      margin-bottom: 20px;
+      margin-bottom: 15px;
       position: sticky;
       top: 0;
       z-index: 10;
-      background: #fdfdfd;
-      padding-top: 10px;
-      padding-bottom: 10px;
-    }
-
-    .homey-form-input-search {
-      width: 100%;
-      box-sizing: border-box;
+      background: var(--bg-card);
+      padding: 10px 0;
+      display: flex;
+      gap: 10px;
+      align-items: center;
     }
 
     .zone-group {
@@ -138,17 +200,17 @@
       font-size: 14px;
       font-weight: 700;
       text-transform: uppercase;
-      color: #888;
+      color: var(--text-secondary);
       margin-bottom: 10px;
       padding-bottom: 5px;
-      border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+      border-bottom: 1px solid var(--border-light);
     }
 
     .device-item {
       display: flex;
       align-items: center;
       padding: 12px;
-      border-bottom: 1px solid rgba(0, 0, 0, 0.03);
+      border-bottom: 1px solid var(--border-light);
       cursor: pointer;
     }
 
@@ -168,66 +230,286 @@
 
     .device-class {
       font-size: 12px;
-      color: #999;
+      color: var(--text-secondary);
     }
 
-    /* Counter and Save */
-    .footer {
-      padding: 20px;
-      position: sticky;
-      bottom: 0;
-      background: white;
-      border-top: 1px solid rgba(0, 0, 0, 0.1);
+    /* Informational and Warning Notice Boxes */
+    .notice-box {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      line-height: 1.4;
+      margin-bottom: 12px;
+    }
+
+    .notice-box.info {
+      background: rgba(0, 122, 255, 0.08);
+      border: 1px solid rgba(0, 122, 255, 0.2);
+      color: var(--text-primary);
+    }
+
+    .notice-box.warning {
+      background: rgba(255, 149, 0, 0.1);
+      border: 1px solid rgba(255, 149, 0, 0.3);
+      color: var(--text-primary);
+    }
+
+    /* Barrier Toggle Card (Native Homey Switch Style) */
+    .barrier-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 14px 16px;
+      background-color: var(--bg-card);
+      margin-bottom: 10px;
+      cursor: pointer;
+      transition: background-color 0.2s, border-color 0.2s;
+    }
+
+    .barrier-card:hover {
+      background-color: var(--bg-card-hover);
+    }
+
+    .barrier-info {
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 3px;
+      flex: 1;
+      padding-right: 14px;
+    }
+
+    .barrier-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .barrier-desc {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    /* iOS / Homey Native Toggle Switch */
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 48px;
+      height: 28px;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+      position: absolute;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #e9e9ea;
+      transition: background-color 0.25s ease;
+      border-radius: 28px;
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 24px;
+      width: 24px;
+      left: 2px;
+      bottom: 2px;
+      background-color: #ffffff;
+      transition: transform 0.25s ease;
+      border-radius: 50%;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .toggle-switch input:checked + .toggle-slider {
+      background-color: #34c759 !important;
+    }
+
+    .toggle-switch input:checked + .toggle-slider:before {
+      transform: translateX(20px);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .toggle-slider {
+        background-color: #39393d;
+      }
+      .toggle-switch input:checked + .toggle-slider {
+        background-color: #34c759 !important;
+      }
+    }
+
+    /* Footer & Counters */
+    .footer {
+      padding: 15px;
+      position: sticky;
+      bottom: 0;
+      background: var(--bg-back-btn);
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-top: auto;
+      flex-shrink: 0;
     }
 
     .counter {
       text-align: center;
       font-size: 13px;
-      color: #666;
+      color: var(--text-secondary);
+      font-weight: 500;
     }
 
     .counter.limit-reached {
       color: #e74c3c;
-      font-weight: 600;
+      font-weight: 700;
     }
 
-    .homey-button-primary-full {
-      width: 100%;
-      background-color: #3DDC84;
-      color: white;
-      border: none;
-      padding: 12px;
-      border-radius: 4px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-
-    .homey-button-primary-full:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
+    /* Toast Notifications */
     .toast {
       position: fixed;
-      bottom: 80px;
+      bottom: 30px;
       left: 50%;
       transform: translateX(-50%);
       padding: 12px 20px;
-      background-color: #2ecc71;
+      background-color: #28a745;
       color: white;
-      border-radius: 4px;
+      border-radius: 8px;
       font-size: 14px;
-      z-index: 1000;
+      font-weight: 500;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
       opacity: 0;
+      transition: opacity 0.3s ease;
       pointer-events: none;
-      transition: opacity 0.3s;
+      z-index: 1000;
+      text-align: center;
+      max-width: 90%;
     }
 
     .toast.show {
       opacity: 1;
+    }
+
+    .toast.success {
+      background-color: #28a745;
+    }
+
+    .toast.warning {
+      background-color: #ff9500;
+      color: #ffffff;
+    }
+
+    .toast.error {
+      background-color: #dc3545;
+    }
+
+    /* Diagnostic Log Files List */
+    .log-files-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .log-file-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      background: var(--bg-card);
+      gap: 12px;
+    }
+
+    .log-file-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .log-file-title {
+      font-family: monospace;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .log-file-meta {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+      white-space: nowrap;
+    }
+
+    .log-file-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    /* Climate / Thermometer Selector Items */
+    .climate-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      background: var(--bg-card);
+      margin-bottom: 8px;
+      gap: 12px;
+    }
+
+    .climate-selector {
+      display: inline-flex;
+      border-radius: 8px;
+      background: var(--bg-card-hover);
+      padding: 2px;
+      border: 1px solid var(--border-light);
+    }
+
+    .climate-opt {
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      border-radius: 6px;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s ease;
+      color: var(--text-secondary);
+    }
+
+    .climate-opt:hover {
+      background: rgba(0, 0, 0, 0.05);
+    }
+
+    .climate-opt.active.indoor {
+      background: #28a745;
+      color: white;
+      font-weight: 600;
+    }
+
+    .climate-opt.active.outdoor {
+      background: #007aff;
+      color: white;
+      font-weight: 600;
     }
   </style>
 </head>
@@ -237,38 +519,120 @@
 
     <!-- View 0: Main Menu -->
     <div id="view-menu" class="view is-active">
-      <div class="menu-list-container">
-        <div id="nav_home_config" class="menu-item" role="button" tabindex="0">
-          <div class="menu-item-content">
-            <div class="menu-item-icon">
-              <!-- Smart Home / Grid Icon -->
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="3" width="7" height="7"></rect>
-                <rect x="14" y="3" width="7" height="7"></rect>
-                <rect x="14" y="14" width="7" height="7"></rect>
-                <rect x="3" y="14" width="7" height="7"></rect>
-              </svg>
+      <header class="homey-header" style="margin-bottom: 10px;">
+        <h1 class="homey-title" data-i18n="settings.menu.title"></h1>
+      </header>
+
+      <form class="homey-form">
+        <fieldset class="homey-form-fieldset">
+          <div class="menu-list-container">
+
+            <!-- Submenu 1: Home Tab Configuration -->
+            <div id="nav_home_config" class="menu-item" role="button" tabindex="0">
+              <div class="menu-item-content">
+                <div class="menu-item-icon">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="14" width="7" height="7"></rect>
+                    <rect x="3" y="14" width="7" height="7"></rect>
+                  </svg>
+                </div>
+                <div class="menu-item-text">
+                  <span class="menu-item-title" data-i18n="settings.menu.home_config_title"></span>
+                  <span class="menu-item-subtitle" data-i18n="settings.menu.home_config_desc"></span>
+                </div>
+              </div>
+              <div class="menu-item-arrow">›</div>
             </div>
-            <div class="menu-item-text">
-              <span class="menu-item-title" data-i18n="settings.menu.home_config_title"></span>
-              <span class="menu-item-subtitle" data-i18n="settings.menu.home_config_desc"></span>
+
+            <!-- Submenu 2: Geofence Proximity Alerts -->
+            <div id="nav_geofence" class="menu-item" role="button" tabindex="0">
+              <div class="menu-item-content">
+                <div class="menu-item-icon">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                  </svg>
+                </div>
+                <div class="menu-item-text">
+                  <span class="menu-item-title" data-i18n="settings.menu.geofence_title"></span>
+                  <span class="menu-item-subtitle" data-i18n="settings.menu.geofence_desc"></span>
+                </div>
+              </div>
+              <div class="menu-item-arrow">›</div>
             </div>
+
+            <!-- Submenu 3: Thermometers & Climate -->
+            <div id="nav_climate" class="menu-item" role="button" tabindex="0">
+              <div class="menu-item-content">
+                <div class="menu-item-icon">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path>
+                  </svg>
+                </div>
+                <div class="menu-item-text">
+                  <span class="menu-item-title" data-i18n="settings.menu.climate_title"></span>
+                  <span class="menu-item-subtitle" data-i18n="settings.menu.climate_desc"></span>
+                </div>
+              </div>
+              <div class="menu-item-arrow">›</div>
+            </div>
+
+            <!-- Submenu 4: Debug & Diagnostics -->
+            <div id="nav_debug" class="menu-item" role="button" tabindex="0">
+              <div class="menu-item-content">
+                <div class="menu-item-icon">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect width="18" height="14" x="3" y="5" rx="2"></rect>
+                    <path d="m7 15 3-3-3-3"></path>
+                    <path d="M13 15h4"></path>
+                  </svg>
+                </div>
+                <div class="menu-item-text">
+                  <span class="menu-item-title" data-i18n="settings.menu.debug_title"></span>
+                  <span class="menu-item-subtitle" data-i18n="settings.menu.debug_desc"></span>
+                </div>
+              </div>
+              <div class="menu-item-arrow">›</div>
+            </div>
+
           </div>
-          <div class="menu-item-arrow">›</div>
-        </div>
-      </div>
+        </fieldset>
+      </form>
     </div>
 
-    <!-- View 1: Device Selector -->
-    <div id="view-selector" class="view" style="height: 100vh; flex-direction: column;">
-      <div style="padding: 10px 0; flex-shrink: 0;">
-        <header class="homey-header">
+    <!-- View 1: Device Selector (Home Tab) -->
+    <div id="view-selector" class="view">
+      <!-- Top Back Button -->
+      <div class="menu-item back-item back-btn" role="button" tabindex="0">
+        <div class="menu-item-arrow">‹</div>
+        <div class="menu-item-text">
+          <span class="menu-item-title" data-i18n="settings.common.back"></span>
+        </div>
+      </div>
+
+      <div style="padding: 0 0 10px 0; flex-shrink: 0;">
+        <header class="homey-header" style="margin-top: 5px; margin-bottom: 5px;">
           <h1 class="homey-title" data-i18n="settings.home_config.title"></h1>
         </header>
         <p class="subtitle" data-i18n="settings.home_config.subtitle"></p>
 
-        <div class="search-container" style="display: flex; gap: 10px; align-items: center;">
+        <div class="notice-box warning">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+            stroke="#ff9500" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          <span data-i18n="settings.home_config.homeyscript_alert"></span>
+        </div>
+
+        <div class="search-container">
           <input type="search" id="deviceSearch" class="homey-form-input"
             data-i18n-placeholder="settings.home_config.search_placeholder" style="flex: 1; margin-bottom: 0;">
           <button id="saveBtn" class="homey-button-secondary" data-i18n="settings.common.save"
@@ -281,81 +645,282 @@
         <p style="text-align:center; padding:20px; color:#999" data-i18n="settings.home_config.loading"></p>
       </div>
 
-      <!-- Simplified Footer (Counter Only) -->
-      <div class="footer"
-        style="flex-shrink: 0; background: white; padding: 15px; border-top: 1px solid #eee; margin-top: auto; display: flex; justify-content: center; align-items: center;">
-        <div id="selectionCounter" class="counter" style="margin-bottom: 0; font-weight: 500;">0 / 9</div>
+      <!-- Footer Counter -->
+      <div class="footer">
+        <div id="selectionCounter" class="counter">0 / 9</div>
+      </div>
+    </div>
+
+    <!-- View 2: Geofence Barriers Selector -->
+    <div id="view-geofence" class="view">
+      <!-- Top Back Button -->
+      <div class="menu-item back-item back-btn" role="button" tabindex="0">
+        <div class="menu-item-arrow">‹</div>
+        <div class="menu-item-text">
+          <span class="menu-item-title" data-i18n="settings.common.back"></span>
+        </div>
       </div>
 
-      <!-- Back Navigation -->
-      <div style="margin-bottom: 40px;">
-        <a id="backBtn" href="#"
-          style="color: rgba(0,0,0,0.4); text-decoration: none; font-size: 14px; display: inline-flex; align-items: center; gap: 5px;"
-          data-i18n="settings.common.back_to_menu"></a>
+      <div style="padding: 0 0 10px 0; flex-shrink: 0;">
+        <header class="homey-header" style="margin-top: 5px; margin-bottom: 5px;">
+          <h1 class="homey-title" data-i18n="settings.geofence.title"></h1>
+        </header>
+        <p class="subtitle" data-i18n="settings.geofence.subtitle"></p>
+
+        <div class="notice-box info">
+          <span data-i18n="settings.geofence.notice_info"></span>
+        </div>
+
+        <div class="search-container">
+          <input type="search" id="geofenceSearch" class="homey-form-input"
+            data-i18n-placeholder="settings.geofence.search_placeholder" style="flex: 1; margin-bottom: 0;">
+          <button id="saveGeofenceBtn" class="homey-button-secondary" data-i18n="settings.common.save"
+            style="margin: 0; white-space: nowrap;"></button>
+        </div>
+      </div>
+
+      <!-- Scrollable Barrier List Area -->
+      <div id="geofenceList" style="flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0;">
+        <p style="text-align:center; padding:20px; color:#999" data-i18n="settings.geofence.loading"></p>
+      </div>
+
+      <!-- Footer Counter -->
+      <div class="footer">
+        <div id="geofenceCounter" class="counter">0 / 3</div>
+      </div>
+    </div>
+
+    <!-- View 3: Thermometers & Climate Configuration -->
+    <div id="view-climate" class="view">
+      <!-- Top Back Button -->
+      <div class="menu-item back-item back-btn" role="button" tabindex="0">
+        <div class="menu-item-arrow">‹</div>
+        <div class="menu-item-text">
+          <span class="menu-item-title" data-i18n="settings.common.back"></span>
+        </div>
+      </div>
+
+      <div style="padding: 0 0 10px 0; flex-shrink: 0;">
+        <header class="homey-header" style="margin-top: 5px; margin-bottom: 5px;">
+          <h1 class="homey-title" data-i18n="settings.climate.title"></h1>
+        </header>
+        <p class="subtitle" data-i18n="settings.climate.subtitle"></p>
+
+        <div class="notice-box info">
+          <span data-i18n="settings.climate.notice_info"></span>
+        </div>
+
+        <div class="search-container">
+          <input type="search" id="climateSearch" class="homey-form-input"
+            data-i18n-placeholder="settings.climate.search_placeholder" style="flex: 1; margin-bottom: 0;">
+          <button id="saveClimateBtn" class="homey-button-secondary" data-i18n="settings.common.save"
+            style="margin: 0; white-space: nowrap;"></button>
+        </div>
+      </div>
+
+      <!-- Scrollable List Area -->
+      <div id="climateList" style="flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0;">
+        <p style="text-align:center; padding:20px; color:#999" data-i18n="settings.climate.loading"></p>
+      </div>
+    </div>
+
+    <!-- View 4: Debug & Diagnostics -->
+    <div id="view-debug" class="view">
+      <!-- Top Back Button -->
+      <div class="menu-item back-item back-btn" role="button" tabindex="0">
+        <div class="menu-item-arrow">‹</div>
+        <div class="menu-item-text">
+          <span class="menu-item-title" data-i18n="settings.common.back"></span>
+        </div>
+      </div>
+
+      <div style="padding: 0 0 10px 0; flex-shrink: 0;">
+        <header class="homey-header" style="margin-top: 5px; margin-bottom: 5px;">
+          <h1 class="homey-title" data-i18n="settings.debug.title"></h1>
+        </header>
+        <p class="subtitle" data-i18n="settings.debug.subtitle"></p>
+
+        <div class="notice-box info">
+          <span data-i18n="settings.debug.notice_info"></span>
+        </div>
+
+        <div class="barrier-card" id="debug_toggle_card" style="margin-top: 15px;">
+          <div class="barrier-info">
+            <span class="barrier-name" data-i18n="settings.debug.enable_label"></span>
+            <span class="barrier-desc" data-i18n="settings.debug.enable_desc"></span>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="chk_debug_logging">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <!-- Log Files Management Section -->
+        <div style="margin-top: 25px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <span style="font-size: 14px; font-weight: 700; text-transform: uppercase; color: var(--text-secondary);" data-i18n="settings.debug.files_heading"></span>
+            <div style="display: flex; gap: 8px;">
+              <button id="btnRefreshFileList" type="button" class="homey-button-secondary" style="font-size: 12px; padding: 6px 12px; margin: 0;" data-i18n="settings.debug.btn_refresh"></button>
+              <button id="btnClearAllFiles" type="button" class="homey-button-secondary" style="font-size: 12px; padding: 6px 12px; margin: 0; color: #dc3545;" data-i18n="settings.debug.btn_clear_all"></button>
+            </div>
+          </div>
+          <div id="logsFileList" class="log-files-list"></div>
+        </div>
       </div>
     </div>
 
   </div>
 
-  <div id="toast" class="toast" data-i18n="settings.common.saved"></div>
+  <!-- Toast Notification Container -->
+  <div id="toast" class="toast"></div>
 
   <script type="text/javascript">
+    /**
+     * Initializes the settings view once Homey environment is loaded.
+     *
+     * @public
+     * @param {object} Homey - Homey Settings API instance.
+     */
     function onHomeyReady(Homey) {
       Homey.ready();
 
-      const MAX_DEVICES = 9;
+      const MAX_HOME_DEVICES = 9;
+      const MAX_GEOFENCE_BARRIERS = 3;
+
       let allDevices = [];
       let allZones = {};
-      let selectedIds = [];
+      let selectedHomeDeviceIds = [];
+      let selectedGeofenceBarrierIds = [];
 
+      // View containers
       const viewMenu = document.getElementById('view-menu');
       const viewSelector = document.getElementById('view-selector');
+      const viewGeofence = document.getElementById('view-geofence');
+      const viewClimate = document.getElementById('view-climate');
+      const viewDebug = document.getElementById('view-debug');
+      const views = [viewMenu, viewSelector, viewGeofence, viewClimate, viewDebug];
+
+      // Elements for Home Config
       const deviceList = document.getElementById('deviceList');
-      const searchInput = document.getElementById('deviceSearch');
-      const counterLabel = document.getElementById('selectionCounter');
+      const deviceSearchInput = document.getElementById('deviceSearch');
+      const selectionCounterLabel = document.getElementById('selectionCounter');
+      const saveBtn = document.getElementById('saveBtn');
+
+      // Elements for Geofence Config
+      const geofenceList = document.getElementById('geofenceList');
+      const geofenceSearchInput = document.getElementById('geofenceSearch');
+      const geofenceCounterLabel = document.getElementById('geofenceCounter');
+      const saveGeofenceBtn = document.getElementById('saveGeofenceBtn');
+
+      // Elements for Climate Config
+      const climateList = document.getElementById('climateList');
+      const climateSearchInput = document.getElementById('climateSearch');
+      const saveClimateBtn = document.getElementById('saveClimateBtn');
+      let climateConfig = {};
+      let climateDevices = [];
+
+      // Elements for Debug Config
+      const debugChk = document.getElementById('chk_debug_logging');
+      const debugCard = document.getElementById('debug_toggle_card');
+      const logsFileList = document.getElementById('logsFileList');
+      const btnRefreshFileList = document.getElementById('btnRefreshFileList');
+      const btnClearAllFiles = document.getElementById('btnClearAllFiles');
+
       const toast = document.getElementById('toast');
 
-      function switchView(view) {
-        document.querySelectorAll('.view').forEach(v => v.classList.remove('is-active'));
-        view.classList.add('is-active');
+      /**
+       * Switches active SPA view.
+       *
+       * @private
+       * @param {HTMLElement} targetView - Target view container element.
+       */
+      function _showView(targetView) {
+        views.forEach(v => {
+          if (v) v.classList.remove('is-active');
+        });
+        if (targetView) {
+          targetView.classList.add('is-active');
+        }
+        window.scrollTo(0, 0);
       }
 
-      function showToast() {
+      /**
+       * Shows a toast message with specified styling type.
+       *
+       * @private
+       * @param {string} message - Text to show in toast.
+       * @param {string} [type='success'] - Toast type ('success', 'warning', 'error').
+       */
+      function _showToast(message, type = 'success') {
+        toast.textContent = message;
+        toast.classList.remove('success', 'warning', 'error');
+        toast.classList.add(type);
         toast.classList.add('show');
-        setTimeout(() => toast.classList.remove('show'), 3000);
+        setTimeout(() => {
+          toast.classList.remove('show');
+        }, 3000);
       }
 
-      // Load data
-      function loadData() {
-        console.log("Loading Homey data...");
+      /**
+       * Loads base devices and zones from Homey API.
+       *
+       * @private
+       * @param {Function} callback - Callback invoked upon successful load.
+       */
+      function _fetchBaseData(callback) {
+        if (allDevices.length > 0 && Object.keys(allZones).length > 0) {
+          return callback();
+        }
 
-        // Fetch zones
         Homey.api('GET', '/zones', null, (err, zones) => {
-          if (err) return console.error("Failed to load zones", err);
+          if (err) {
+            console.error('[Settings] Failed to load zones', err);
+            _showToast(Homey.__('settings.common.error_generic'), 'error');
+            return;
+          }
           allZones = zones;
 
-          // Fetch devices (via proxy)
           Homey.api('GET', '/devices', null, (err, devices) => {
-            if (err) return console.error("Failed to load devices", err);
+            if (err) {
+              console.error('[Settings] Failed to load devices', err);
+              _showToast(Homey.__('settings.common.error_generic'), 'error');
+              return;
+            }
 
-            allDevices = Object.values(devices)
-              .sort((a, b) => a.name.localeCompare(b.name));
-
-            // Fetch saved settings
-            Homey.get('home_devices_ids', (err, val) => {
-              selectedIds = val || [];
-              renderList();
-              updateCounter();
-            });
+            allDevices = Object.values(devices).sort((a, b) => a.name.localeCompare(b.name));
+            callback();
           });
         });
       }
 
-      function renderList(filter = '') {
+      // ── Home Tab Devices Logic ─────────────────────────────────────────────────────
+
+      /**
+       * Loads configuration data for the Home Tab devices.
+       *
+       * @private
+       */
+      function _loadHomeConfigData() {
+        deviceList.innerHTML = '<p style="text-align:center; padding:20px; color:#999">' + Homey.__('settings.home_config.loading') + '</p>';
+        _fetchBaseData(() => {
+          Homey.get('home_devices_ids', (err, val) => {
+            selectedHomeDeviceIds = Array.isArray(val) ? val : [];
+            _renderHomeDeviceList(deviceSearchInput.value);
+            _updateHomeCounter();
+          });
+        });
+      }
+
+      /**
+       * Renders the device list for Home Tab selection.
+       *
+       * @private
+       * @param {string} [filter=''] - Search term.
+       */
+      function _renderHomeDeviceList(filter = '') {
         deviceList.innerHTML = '';
         const search = filter.toLowerCase();
 
-        // Group by zone
         const grouped = {};
         allDevices.forEach(d => {
           const zoneName = allZones[d.zone]?.name || 'Home';
@@ -380,10 +945,10 @@
             const item = document.createElement('div');
             item.className = 'device-item';
 
-            const isChecked = selectedIds.indexOf(device.id) !== -1;
+            const isChecked = selectedHomeDeviceIds.indexOf(device.id) !== -1;
 
             item.innerHTML = `
-              <input type="checkbox" id="chk_${device.id}" ${isChecked ? 'checked' : ''} ${!isChecked && selectedIds.length >= MAX_DEVICES ? 'disabled' : ''}>
+              <input type="checkbox" id="chk_${device.id}" ${isChecked ? 'checked' : ''} ${!isChecked && selectedHomeDeviceIds.length >= MAX_HOME_DEVICES ? 'disabled' : ''}>
               <div class="device-info">
                 <div class="device-name">${device.name}</div>
                 <div class="device-class">${device.class}</div>
@@ -395,12 +960,12 @@
               const chk = document.getElementById('chk_' + device.id);
               if (!chk.disabled) {
                 chk.checked = !chk.checked;
-                handleSelection(device.id, chk.checked);
+                _handleHomeDeviceSelection(device.id, chk.checked);
               }
             };
 
             item.querySelector('input').onchange = (e) => {
-              handleSelection(device.id, e.target.checked);
+              _handleHomeDeviceSelection(device.id, e.target.checked);
             };
 
             zoneDiv.appendChild(item);
@@ -410,73 +975,502 @@
         });
       }
 
-      function handleSelection(id, isSelected) {
+      /**
+       * Handles selection toggle for Home Tab devices.
+       *
+       * @private
+       * @param {string} id - Device ID.
+       * @param {boolean} isSelected - New checked state.
+       */
+      function _handleHomeDeviceSelection(id, isSelected) {
         if (isSelected) {
-          if (selectedIds.length < MAX_DEVICES) {
-            selectedIds.push(id);
+          if (selectedHomeDeviceIds.length < MAX_HOME_DEVICES) {
+            selectedHomeDeviceIds.push(id);
           }
         } else {
-          selectedIds = selectedIds.filter(i => i !== id);
+          selectedHomeDeviceIds = selectedHomeDeviceIds.filter(i => i !== id);
         }
-        updateCounter();
-        // Dynamic re-render
-        renderList(searchInput.value);
+        _updateHomeCounter();
+        _renderHomeDeviceList(deviceSearchInput.value);
       }
 
-      function updateCounter() {
-        counterLabel.innerText = selectedIds.length + " / " + MAX_DEVICES;
-        if (selectedIds.length >= MAX_DEVICES) {
-          counterLabel.classList.add('limit-reached');
+      /**
+       * Updates the Home Tab selection counter.
+       *
+       * @private
+       */
+      function _updateHomeCounter() {
+        selectionCounterLabel.innerText = selectedHomeDeviceIds.length + ' / ' + MAX_HOME_DEVICES;
+        if (selectedHomeDeviceIds.length >= MAX_HOME_DEVICES) {
+          selectionCounterLabel.classList.add('limit-reached');
         } else {
-          counterLabel.classList.remove('limit-reached');
+          selectionCounterLabel.classList.remove('limit-reached');
         }
       }
 
-      // Event Listeners
-      const navHomeConfig = document.getElementById('nav_home_config');
-      const backBtn = document.getElementById('backBtn');
-      const saveBtn = document.getElementById('saveBtn');
+      // ── Geofence Barriers Logic (Native Toggle Switches) ───────────────────────────
 
-      if (navHomeConfig) {
-        navHomeConfig.addEventListener('click', () => {
-          searchInput.placeholder = Homey.__('settings.home_config.search_placeholder');
-          loadData();
-          switchView(viewSelector);
-        });
-      }
-
-      if (backBtn) {
-        backBtn.innerText = Homey.__('settings.common.back_to_menu');
-        backBtn.addEventListener('click', (e) => {
-          e.preventDefault();
-          switchView(viewMenu);
-        });
-      }
-
-      if (saveBtn) {
-        saveBtn.innerText = Homey.__('settings.common.save');
-        saveBtn.addEventListener('click', () => {
-          console.log("Save button clicked, selected IDs:", selectedIds);
-
-          // Visual feedback - temporary disable to prevent double clicks
-          saveBtn.disabled = true;
-
-          Homey.set('home_devices_ids', selectedIds, (err) => {
-            saveBtn.disabled = false;
-
-            if (err) {
-              console.error("Error saving settings:", err);
-              return Homey.alert(err);
-            }
-
-            console.log("Settings saved successfully!");
-            showToast();
+      /**
+       * Loads configuration data for geofence proximity barriers.
+       *
+       * @private
+       */
+      function _loadGeofenceData() {
+        geofenceList.innerHTML = '<p style="text-align:center; padding:20px; color:#999">' + Homey.__('settings.geofence.loading') + '</p>';
+        _fetchBaseData(() => {
+          Homey.get('geofence_device_ids', (err, val) => {
+            selectedGeofenceBarrierIds = Array.isArray(val) ? val : [];
+            _renderGeofenceList(geofenceSearchInput.value);
+            _updateGeofenceCounter();
           });
         });
       }
 
-      searchInput.addEventListener('input', (e) => renderList(e.target.value));
+      /**
+       * Renders the barrier devices list with toggle switches.
+       *
+       * @private
+       * @param {string} [filter=''] - Search filter.
+       */
+      function _renderGeofenceList(filter = '') {
+        geofenceList.innerHTML = '';
+        const search = filter.toLowerCase();
 
+        // Filter devices: only garagedoor, lock, doorbell
+        const barrierDevices = allDevices.filter(d => {
+          const cls = (d.class || '').toLowerCase();
+          return cls === 'garagedoor' || cls === 'lock' || cls === 'doorbell';
+        });
+
+        const grouped = {};
+        barrierDevices.forEach(d => {
+          const zoneName = allZones[d.zone]?.name || 'Home';
+          if (d.name.toLowerCase().includes(search) || zoneName.toLowerCase().includes(search)) {
+            if (!grouped[zoneName]) grouped[zoneName] = [];
+            grouped[zoneName].push(d);
+          }
+        });
+
+        const sortedZones = Object.keys(grouped).sort();
+        if (sortedZones.length === 0) {
+          geofenceList.innerHTML = '<p style="text-align:center; padding:20px; color:#999">' + Homey.__('settings.geofence.no_barriers') + '</p>';
+          return;
+        }
+
+        sortedZones.forEach(zoneName => {
+          const zoneDiv = document.createElement('div');
+          zoneDiv.className = 'zone-group';
+          zoneDiv.innerHTML = '<div class="zone-title">' + zoneName + '</div>';
+
+          grouped[zoneName].forEach(device => {
+            const card = document.createElement('div');
+            card.className = 'barrier-card';
+
+            const isChecked = selectedGeofenceBarrierIds.indexOf(device.id) !== -1;
+
+            card.innerHTML = `
+              <div class="barrier-info">
+                <span class="barrier-name">${device.name}</span>
+                <span class="barrier-desc">${zoneName} • ${device.class}</span>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="geo_chk_${device.id}" ${isChecked ? 'checked' : ''}>
+                <span class="toggle-slider"></span>
+              </label>
+            `;
+
+            const inputElem = card.querySelector('input');
+
+            card.onclick = (e) => {
+              if (e.target.closest('.toggle-switch')) {
+                return;
+              }
+              inputElem.checked = !inputElem.checked;
+              _handleGeofenceToggle(device.id, inputElem.checked, inputElem);
+            };
+
+            inputElem.onchange = (e) => {
+              _handleGeofenceToggle(device.id, inputElem.checked, inputElem);
+            };
+
+            zoneDiv.appendChild(card);
+          });
+
+          geofenceList.appendChild(zoneDiv);
+        });
+      }
+
+      /**
+       * Handles toggle state change for a barrier device.
+       * Enforces maximum limit of 3 barriers and triggers warning toast upon 4th selection attempt.
+       *
+       * @private
+       * @param {string} id - Device ID.
+       * @param {boolean} shouldBeChecked - Requested checked state.
+       * @param {HTMLInputElement} inputElement - Checkbox DOM element.
+       */
+      function _handleGeofenceToggle(id, shouldBeChecked, inputElement) {
+        if (shouldBeChecked) {
+          const index = selectedGeofenceBarrierIds.indexOf(id);
+          if (index === -1) {
+            if (selectedGeofenceBarrierIds.length >= MAX_GEOFENCE_BARRIERS) {
+              inputElement.checked = false;
+              _showToast(Homey.__('settings.geofence.max_reached'), 'warning');
+              return;
+            }
+            selectedGeofenceBarrierIds.push(id);
+          }
+          inputElement.checked = true;
+        } else {
+          selectedGeofenceBarrierIds = selectedGeofenceBarrierIds.filter(i => i !== id);
+          inputElement.checked = false;
+        }
+
+        _updateGeofenceCounter();
+      }
+
+      /**
+       * Updates the geofence selection counter.
+       *
+       * @private
+       */
+      function _updateGeofenceCounter() {
+        geofenceCounterLabel.innerText = selectedGeofenceBarrierIds.length + ' / ' + MAX_GEOFENCE_BARRIERS;
+        if (selectedGeofenceBarrierIds.length >= MAX_GEOFENCE_BARRIERS) {
+          geofenceCounterLabel.classList.add('limit-reached');
+        } else {
+          geofenceCounterLabel.classList.remove('limit-reached');
+        }
+      }
+
+      // ── Climate & Thermometers Logic ───────────────────────────────────────────────
+
+      /**
+       * Loads configuration data for thermometers and climate settings.
+       *
+       * @private
+       * @returns {void}
+       * @example
+       * _loadClimateData();
+       */
+      function _loadClimateData() {
+        climateList.innerHTML = '<p style="text-align:center; padding:20px; color:#999">' + Homey.__('settings.climate.loading') + '</p>';
+        _fetchBaseData(() => {
+          Homey.api('GET', '/thermometers', null, (err, res) => {
+            if (err) {
+              console.error('[Settings] Failed to load thermometers', err);
+              _showToast(Homey.__('settings.common.error_generic'), 'error');
+              return;
+            }
+            climateConfig = (res && res.config && typeof res.config === 'object') ? res.config : {};
+            climateDevices = (res && Array.isArray(res.devices)) ? res.devices : [];
+            _renderClimateList(climateSearchInput.value);
+          });
+        });
+      }
+
+      /**
+       * Renders the list of temperature sensor devices with segmented selector controls (Indoor / Outdoor).
+       *
+       * @private
+       * @param {string} [filter=''] - Search filter text to match against device or zone name.
+       * @returns {void}
+       * @example
+       * _renderClimateList('living room');
+       */
+      function _renderClimateList(filter = '') {
+        climateList.innerHTML = '';
+        const search = (filter || '').toLowerCase();
+
+        const grouped = {};
+        climateDevices.forEach(d => {
+          const zoneName = allZones[d.zone]?.name || 'Home';
+          if (d.name.toLowerCase().includes(search) || zoneName.toLowerCase().includes(search)) {
+            if (!grouped[zoneName]) grouped[zoneName] = [];
+            grouped[zoneName].push(d);
+          }
+        });
+
+        const sortedZones = Object.keys(grouped).sort();
+        if (sortedZones.length === 0) {
+          climateList.innerHTML = '<p style="text-align:center; padding:20px; color:#999">' + Homey.__('settings.climate.no_thermometers') + '</p>';
+          return;
+        }
+
+        sortedZones.forEach(zoneName => {
+          const zoneDiv = document.createElement('div');
+          zoneDiv.className = 'zone-group';
+          zoneDiv.innerHTML = '<div class="zone-title">' + zoneName + '</div>';
+
+          grouped[zoneName].forEach(device => {
+            const item = document.createElement('div');
+            item.className = 'climate-item';
+
+            // Current mode: "indoor" (default) or "outdoor"
+            const currentMode = climateConfig[device.id] === 'outdoor' ? 'outdoor' : 'indoor';
+
+            item.innerHTML = `
+              <div class="barrier-info" style="flex: 1; min-width: 0;">
+                <span class="barrier-name">${device.name}</span>
+                <span class="barrier-desc">${zoneName}</span>
+              </div>
+              <div class="climate-selector" data-device-id="${device.id}">
+                <div class="climate-opt indoor ${currentMode === 'indoor' ? 'active' : ''}" data-mode="indoor">${Homey.__('settings.climate.mode_indoor')}</div>
+                <div class="climate-opt outdoor ${currentMode === 'outdoor' ? 'active' : ''}" data-mode="outdoor">${Homey.__('settings.climate.mode_outdoor')}</div>
+              </div>
+            `;
+
+            const options = item.querySelectorAll('.climate-opt');
+            options.forEach(opt => {
+              opt.onclick = () => {
+                const mode = opt.getAttribute('data-mode');
+                climateConfig[device.id] = mode;
+                options.forEach(o => o.classList.remove('active'));
+                opt.classList.add('active');
+              };
+            });
+
+            zoneDiv.appendChild(item);
+          });
+
+          climateList.appendChild(zoneDiv);
+        });
+      }
+
+      // ── Event Listeners Setup ──────────────────────────────────────────────────────
+
+      // Submenu Navigation Handlers
+      document.getElementById('nav_home_config').addEventListener('click', () => {
+        _showView(viewSelector);
+        _loadHomeConfigData();
+      });
+
+      document.getElementById('nav_geofence').addEventListener('click', () => {
+        _showView(viewGeofence);
+        _loadGeofenceData();
+      });
+
+      document.getElementById('nav_climate').addEventListener('click', () => {
+        _showView(viewClimate);
+        _loadClimateData();
+      });
+
+      // Top Back Button Handlers
+      document.querySelectorAll('.back-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          _showView(viewMenu);
+        });
+      });
+
+      // Search Inputs
+      deviceSearchInput.addEventListener('input', (e) => _renderHomeDeviceList(e.target.value));
+      geofenceSearchInput.addEventListener('input', (e) => _renderGeofenceList(e.target.value));
+      climateSearchInput.addEventListener('input', (e) => _renderClimateList(e.target.value));
+
+      // Save Home Tab Devices
+      saveBtn.addEventListener('click', () => {
+        saveBtn.disabled = true;
+        Homey.set('home_devices_ids', selectedHomeDeviceIds, (err) => {
+          saveBtn.disabled = false;
+          if (err) {
+            console.error('[Settings] Error saving home_devices_ids:', err);
+            _showToast(Homey.__('settings.common.error_generic'), 'error');
+            return;
+          }
+          _showToast(Homey.__('settings.common.saved'), 'success');
+        });
+      });
+
+      // Save Geofence Barriers
+      saveGeofenceBtn.addEventListener('click', () => {
+        saveGeofenceBtn.disabled = true;
+        Homey.set('geofence_device_ids', selectedGeofenceBarrierIds, (err) => {
+          saveGeofenceBtn.disabled = false;
+          if (err) {
+            console.error('[Settings] Error saving geofence_device_ids:', err);
+            _showToast(Homey.__('settings.common.error_generic'), 'error');
+            return;
+          }
+          _showToast(Homey.__('settings.common.saved'), 'success');
+        });
+      });
+
+      // Save Climate Config
+      saveClimateBtn.addEventListener('click', () => {
+        saveClimateBtn.disabled = true;
+        Homey.set('thermometers_config', climateConfig, (err) => {
+          saveClimateBtn.disabled = false;
+          if (err) {
+            console.error('[Settings] Error saving thermometers_config:', err);
+            _showToast(Homey.__('settings.common.error_generic'), 'error');
+            return;
+          }
+          _showToast(Homey.__('settings.common.saved'), 'success');
+        });
+      });
+
+      // ── Debug Logging Logic ────────────────────────────────────────────────────────
+
+      /**
+       * Loads the debug logging setting state and fetches available log files.
+       *
+       * @private
+       */
+      function _loadDebugData() {
+        Homey.get('debug_logging_enabled', (err, val) => {
+          if (debugChk) debugChk.checked = Boolean(val);
+        });
+        _fetchLogFiles();
+      }
+
+      /**
+       * Saves the debug logging setting state.
+       *
+       * @private
+       * @param {boolean} isEnabled - Whether debug logging is enabled.
+       */
+      function _saveDebugSetting(isEnabled) {
+        if (debugChk) debugChk.checked = isEnabled;
+        Homey.set('debug_logging_enabled', isEnabled, (err) => {
+          if (err) {
+            console.error('[Settings] Error saving debug_logging_enabled:', err);
+            _showToast(Homey.__('settings.common.error_generic'), 'error');
+            return;
+          }
+          _showToast(Homey.__('settings.common.saved'), 'success');
+        });
+      }
+
+      /**
+       * Fetches diagnostic log files status via API.
+       *
+       * @private
+       */
+      function _fetchLogFiles() {
+        if (!logsFileList) return;
+        logsFileList.innerHTML = '<p style="text-align:center; padding:15px; color:#999">' + Homey.__('settings.debug.loading_files') + '</p>';
+        Homey.api('GET', '/log/status', null, (err, status) => {
+          if (err) {
+            console.error('[Settings] Failed to fetch log status:', err);
+            logsFileList.innerHTML = '<p style="text-align:center; padding:15px; color:#e74c3c">' + Homey.__('settings.common.error_generic') + '</p>';
+            return;
+          }
+          _renderFileList(status?.files || []);
+        });
+      }
+
+      /**
+       * Renders the list of diagnostic log files.
+       *
+       * @private
+       * @param {Array<object>} files - Log files list.
+       */
+      function _renderFileList(files) {
+        if (!logsFileList) return;
+        logsFileList.innerHTML = '';
+        if (!files || files.length === 0) {
+          logsFileList.innerHTML = '<div class="log-file-card" style="justify-content: center;"><span style="font-size: 13px; color: var(--text-secondary);">' + Homey.__('settings.debug.no_files') + '</span></div>';
+          return;
+        }
+
+        files.forEach(file => {
+          const card = document.createElement('div');
+          card.className = 'log-file-card';
+          const formattedDate = new Date(file.modified).toLocaleString();
+
+          card.innerHTML = `
+            <div class="log-file-info">
+              <div class="log-file-title">${file.name}</div>
+              <div class="log-file-meta"><span>${file.sizeFormatted}</span> &bull; <span>${formattedDate}</span></div>
+            </div>
+            <div class="log-file-actions">
+              <button type="button" class="homey-button-secondary btn-download-file" data-index="${file.index}" style="font-size: 12px; padding: 4px 10px; margin: 0;">
+                ${Homey.__('settings.debug.btn_download')}
+              </button>
+              <button type="button" class="homey-button-secondary btn-delete-file" data-index="${file.index}" style="font-size: 12px; padding: 4px 10px; margin: 0; color: #dc3545;">
+                ${Homey.__('settings.debug.btn_delete')}
+              </button>
+            </div>
+          `;
+
+          const downloadBtn = card.querySelector('.btn-download-file');
+          downloadBtn.addEventListener('click', () => _downloadLogFile(file.index, downloadBtn));
+
+          card.querySelector('.btn-delete-file').addEventListener('click', () => _deleteSingleLogFile(file.index, file.name));
+          logsFileList.appendChild(card);
+        });
+      }
+
+      /**
+       * Requests direct URL for log file and opens in browser via Homey.openURL.
+       *
+       * @private
+       * @param {number} index - Log file index.
+       * @param {HTMLButtonElement} buttonEl - The clicked button.
+       */
+      function _downloadLogFile(index, buttonEl) {
+        if (buttonEl) buttonEl.disabled = true;
+        Homey.api('GET', '/log/download/' + index, null, (err, url) => {
+          if (buttonEl) buttonEl.disabled = false;
+          if (err) return _showToast(Homey.__('settings.debug.download_error') + ': ' + (err.message || err), 'error');
+          if (url && typeof url === 'string') Homey.openURL(url);
+        });
+      }
+
+      /**
+       * Deletes a single log file with user confirmation.
+       *
+       * @private
+       * @param {number} index - Log file index.
+       * @param {string} fileName - File name.
+       */
+      function _deleteSingleLogFile(index, fileName) {
+        const confirmMsg = Homey.__('settings.debug.confirm_delete_file').replace('{0}', fileName);
+        Homey.confirm(confirmMsg, 'warning', (err, confirmed) => {
+          if (err || !confirmed) return;
+          Homey.api('DELETE', '/log/' + index, null, (deleteErr) => {
+            if (deleteErr) return _showToast(Homey.__('settings.common.error_generic'), 'error');
+            _showToast(Homey.__('settings.debug.msg_file_deleted'), 'success');
+            _fetchLogFiles();
+          });
+        });
+      }
+
+      // Submenu Navigation Handler for Debug
+      document.getElementById('nav_debug').addEventListener('click', () => {
+        _showView(viewDebug);
+        _loadDebugData();
+      });
+
+      if (debugCard) {
+        debugCard.onclick = (e) => {
+          if (e.target.closest('.toggle-switch')) return;
+          _saveDebugSetting(!debugChk.checked);
+        };
+      }
+
+      if (debugChk) {
+        debugChk.onchange = (e) => {
+          _saveDebugSetting(e.target.checked);
+        };
+      }
+
+      if (btnRefreshFileList) {
+        btnRefreshFileList.addEventListener('click', () => _fetchLogFiles());
+      }
+
+      if (btnClearAllFiles) {
+        btnClearAllFiles.addEventListener('click', () => {
+          Homey.confirm(Homey.__('settings.debug.confirm_clear_all'), 'warning', (err, confirmed) => {
+            if (err || !confirmed) return;
+            Homey.api('DELETE', '/log/all', null, (deleteErr) => {
+              if (deleteErr) return _showToast(Homey.__('settings.common.error_generic'), 'error');
+              _showToast(Homey.__('settings.debug.msg_cleared'), 'success');
+              _fetchLogFiles();
+            });
+          });
+        });
+      }
     }
   </script>
 </body>

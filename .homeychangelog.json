@@ -26,5 +26,25 @@
   "1.3.0": {
     "en": "Added secure execution of Standard and Advanced Flows from Android Automotive OS via HomeyScript integration, setup notice in settings, and optimized session renewal.",
     "it": "Aggiunto supporto all'avvio sicuro di Flow Standard e Avanzati da Android Automotive tramite HomeyScript, avviso di configurazione nelle impostazioni e rinnovo automatico di sessione."
+  },
+  "1.4.0": {
+    "en": "Added in-app User Guide with setup instructions, system requirements, and Google Play download link, refined settings layout, and improved hub name resolution.",
+    "it": "Aggiunta sezione Guida nelle impostazioni con istruzioni di configurazione iniziale, requisiti di sistema e link a Google Play, layout impostazioni ottimizzato e migliorato recupero nome hub."
+  },
+  "1.4.1": {
+    "en": "Bug fixes and optimizations.",
+    "it": "Risoluzione bug e ottimizzazioni."
+  },
+  "1.5.0": {
+    "en": "Added new Flow cards to trigger automations when your car approaches or leaves home ('The car is approaching home' and 'The car left home'), along with improved vehicle synchronization.",
+    "it": "Aggiunte nuove Flow Card per avviare automazioni quando l'auto si avvicina o si allontana da casa ('L'auto si sta avvicinando a casa' e 'L'auto si è allontanata da casa') e migliorata la sincronizzazione con il veicolo."
+  },
+  "1.5.1": {
+    "en": "Added new Flow cards to trigger automations when your car approaches or leaves home ('The car is approaching home' and 'The car left home'), along with improved vehicle synchronization.",
+    "it": "Aggiunte nuove Flow Card per avviare automazioni quando l'auto si avvicina o si allontana da casa ('L'auto si sta avvicinando a casa' e 'L'auto si è allontanata da casa') e migliorata la sincronizzazione con il veicolo."
+  },
+  "1.5.2": {
+    "en": "Security improvements and hardening.",
+    "it": "Miglioramenti della sicurezza e hardening."
   }
 }

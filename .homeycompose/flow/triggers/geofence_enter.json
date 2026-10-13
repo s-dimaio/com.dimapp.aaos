@@ -1,0 +1,10 @@
+{
+  "title": {
+    "en": "The car is approaching home",
+    "it": "L'auto si sta avvicinando a casa"
+  },
+  "hint": {
+    "en": "Triggered when Android Automotive enters the home geofence area.",
+    "it": "Attivato quando l'auto entra nel raggio di casa."
+  }
+}

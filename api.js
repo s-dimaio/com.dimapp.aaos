@@ -16,8 +16,9 @@
  * a 64-character hex string generated with `SecureRandom` (256-bit entropy) by the
  * AAOS app. The token is delivered exactly once and is deleted immediately after retrieval.
  *
- * @module api
  */
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Handles `POST /auth/start`.
@@ -135,16 +136,31 @@ async function triggerFlow({ homey, body }) {
   const { id, isAdvanced, args } = body ?? {};
 
   if (!id || typeof id !== 'string') {
+    homey.app.error('[api:triggerFlow] Security rejection: Missing or non-string flow ID parameter.');
     throw Object.assign(new Error('Missing or invalid required parameter: id.'), { statusCode: 400 });
   }
 
-  homey.app.log(`[api:triggerFlow] Trigger request received for flow '${id}' (isAdvanced=${Boolean(isAdvanced)})`);
+  const trimmedId = id.trim();
+  if (!UUID_REGEX.test(trimmedId)) {
+    homey.app.error(`[api:triggerFlow] Security rejection: Flow ID '${trimmedId}' does not match standard UUID format.`);
+    throw Object.assign(new Error('Invalid flowId format. Expected standard UUID format (8-4-4-4-12 hex).'), { statusCode: 400 });
+  }
+
+  if (args !== undefined && args !== null) {
+    if (typeof args !== 'object' || Array.isArray(args)) {
+      homey.app.error('[api:triggerFlow] Security rejection: args parameter must be a valid JSON object.');
+      throw Object.assign(new Error('Invalid args parameter. Expected a JSON object.'), { statusCode: 400 });
+    }
+  }
+
+  const safeIsAdvanced = isAdvanced === true;
+  homey.app.log(`[api:triggerFlow] Flow ID validation passed for '${trimmedId}' (isAdvanced=${safeIsAdvanced}). Delegating to app...`);
 
   try {
-    const result = await homey.app.triggerFlow(id, Boolean(isAdvanced), args);
+    const result = await homey.app.triggerFlow(trimmedId, safeIsAdvanced, args ?? {});
     return result;
   } catch (err) {
-    homey.app.error(`[api:triggerFlow] Failed to trigger flow '${id}':`, err.message);
+    homey.app.error(`[api:triggerFlow] Failed to trigger flow '${trimmedId}':`, err.message);
     const statusCode = err.statusCode || (err.code === 'HOMEYSCRIPT_NOT_INSTALLED' ? 404 : 500);
     throw Object.assign(new Error(err.message || 'Failed to trigger flow.'), {
       statusCode,
@@ -154,14 +170,14 @@ async function triggerFlow({ homey, body }) {
 }
 
 async function getDashboards({ homey }) {
-  homey.app.log('[api] getDashboards request received');
+  homey.app.log('[api:getDashboards] Request received');
   
   const selectedIds = homey.settings.get('home_devices_ids') || [];
   
   // If no devices are selected, return an empty list or a flag indicating fallback is needed.
   // The Android app will handle the fallback to Favorites.
   if (selectedIds.length === 0) {
-    console.log('[HomeyAaosCompanionApp] No devices selected in settings, returning empty virtual dashboard');
+    homey.app.log('[api:getDashboards] No devices selected in settings, returning empty virtual dashboard.');
     return {};
   }
 
@@ -187,7 +203,7 @@ async function getDashboards({ homey }) {
   const response = {};
   response[virtualDashboardId] = dashboard;
 
-  homey.app.log(`[api] getDashboards successful: returning 1 virtual dashboard with ${selectedIds.length} devices.`);
+  homey.app.log(`[api:getDashboards] Returning 1 virtual dashboard with ${selectedIds.length} devices.`);
   return response;
 }
 
@@ -196,7 +212,7 @@ async function getDashboards({ homey }) {
  * Used by the settings page.
  */
 async function getDevices({ homey }) {
-  homey.app.log('[api] getDevices proxy called');
+  homey.app.log('[api:getDevices] Proxy request received');
   
   const localUrl = await homey.api.getLocalUrl();
   const token = await homey.api.getOwnerApiToken();
@@ -207,11 +223,12 @@ async function getDevices({ homey }) {
   
   if (!response.ok) {
     const errorBody = await response.text().catch(() => 'no body');
-    console.error(`[HomeyAaosCompanionApp] getDevices proxy failed with status: ${response.status}. Details: ${errorBody}`);
+    homey.app.error(`[api:getDevices] Proxy failed with status: ${response.status}. Details: ${errorBody}`);
     throw new Error(`Local API fetch failed with status: ${response.status}`);
   }
   
   const devices = await response.json();
+  const totalCount = Object.keys(devices).length;
 
   // Find IDs of devices that are part of a group
   const excludedIds = new Set();
@@ -224,21 +241,46 @@ async function getDevices({ homey }) {
   }
 
   const filtered = {};
+  let acceptedLights = 0;
+  let acceptedDoors = 0;
+  let excludedHidden = 0;
+  let excludedGroupMembers = 0;
+  const excludedByClass = {};
+  const excludedControllables = [];
+
   for (const [id, device] of Object.entries(devices)) {
-    // Skip hidden devices or devices that are members of a group
-    if (device.hidden === true || excludedIds.has(id)) {
+    // 1. Skip hidden devices
+    if (device.hidden === true) {
+      excludedHidden++;
+      if (typeof homey.app.debugLog === 'function') {
+        homey.app.debugLog('api:getDevices', `REJECT '${device.name}' (reason: hidden)`);
+      }
       continue;
     }
 
-    // Use virtualClass override if present, otherwise fallback to driver class
+    // 2. Skip devices that are members of a group
+    if (excludedIds.has(id)) {
+      excludedGroupMembers++;
+      if (typeof homey.app.debugLog === 'function') {
+        homey.app.debugLog('api:getDevices', `REJECT '${device.name}' (reason: group member)`);
+      }
+      continue;
+    }
+
+    // 3. Use virtualClass override if present, otherwise fallback to driver class
     const effectiveClass = device.virtualClass || device.class;
 
     const isLight = effectiveClass === 'light';
     const isDoor  = effectiveClass === 'lock' || effectiveClass === 'garagedoor' || effectiveClass === 'doorbell';
 
     if (isLight || isDoor) {
+      if (isLight) {
+        acceptedLights++;
+      } else {
+        acceptedDoors++;
+      }
       if (typeof homey.app.debugLog === 'function') {
-        homey.app.debugLog('api:getDevices', `Device accepted: ${device.name} (class=${effectiveClass})`);
+        homey.app.debugLog('api:getDevices', `ACCEPT '${device.name}' (class=${effectiveClass}, zone=${device.zone})`);
       }
       filtered[id] = {
         id: device.id,
@@ -246,10 +288,60 @@ async function getDevices({ homey }) {
         class: effectiveClass,
         zone: device.zone
       };
+    } else {
+      const clsKey = effectiveClass || 'unknown';
+      excludedByClass[clsKey] = (excludedByClass[clsKey] || 0) + 1;
+
+      // Detect if this non-light device is controllable via onoff or dim (e.g. smart plug / relay used for lights)
+      const caps = Array.isArray(device.capabilities)
+        ? device.capabilities
+        : Object.keys(device.capabilitiesObj || {});
+      const hasToggleCapability = caps.includes('onoff') || caps.includes('dim');
+
+      if (hasToggleCapability) {
+        excludedControllables.push({
+          name: device.name,
+          class: device.class || 'unknown',
+          virtualClass: device.virtualClass || null,
+        });
+      }
+
+      if (typeof homey.app.debugLog === 'function') {
+        homey.app.debugLog(
+          'api:getDevices',
+          `REJECT '${device.name}' (reason: unsupported class '${clsKey}', driverClass='${device.class || 'unknown'}', virtualClass='${device.virtualClass || 'none'}', capabilities=${caps.join(',')})`
+        );
+      }
     }
   }
-  
-  homey.app.log(`[api:getDevices] Returned ${Object.keys(filtered).length} filtered devices.`);
+
+  const acceptedTotal = Object.keys(filtered).length;
+  const excludedTotal = totalCount - acceptedTotal;
+
+  // Format sorted breakdown of excluded classes for concise summary
+  const classBreakdown = Object.entries(excludedByClass)
+    .sort((a, b) => b[1] - a[1])
+    .map(([cls, cnt]) => `${cls}=${cnt}`)
+    .join(', ');
+
+  homey.app.log(
+    `[api:getDevices] Scanned ${totalCount} devices: ${acceptedTotal} accepted (${acceptedLights} lights, ${acceptedDoors} doors), ${excludedTotal} excluded (classes: ${classBreakdown || 'none'}; group members: ${excludedGroupMembers}; hidden: ${excludedHidden}).`
+  );
+
+  // If devices with toggle capabilities were excluded, output a clear diagnostic hint in stdout
+  if (excludedControllables.length > 0) {
+    const previewList = excludedControllables
+      .slice(0, 8)
+      .map(d => `'${d.name}' [class: ${d.class}, virtualClass: ${d.virtualClass || 'none'}]`)
+      .join(', ');
+    const remainingCount = excludedControllables.length - 8;
+    const remainingSuffix = remainingCount > 0 ? ` (+${remainingCount} more)` : '';
+
+    homey.app.log(
+      `[api:getDevices] Notice: ${excludedControllables.length} devices with onoff/dim capability excluded due to class: ${previewList}${remainingSuffix}. Configure 'What is plugged in' to 'Light' in Homey device settings to include them.`
+    );
+  }
+
   return filtered;
 }
 
@@ -273,7 +365,9 @@ async function getZones({ homey }) {
     throw new Error(`Local API fetch failed with status: ${response.status}`);
   }
   
-  return response.json();
+  const zones = await response.json();
+  homey.app.log(`[api:getZones] Returned ${Object.keys(zones).length} zones.`);
+  return zones;
 }
 
 /**
@@ -315,7 +409,6 @@ async function getLocation({ homey }) {
   }
 }
 
-module.exports = { startAuth, pollAuth, refreshAuth, getDashboards, getDevices, getZones, getLocation };
 /**
  * Handles `GET /geofence`.
  *
@@ -338,6 +431,54 @@ async function getGeofenceConfig({ homey }) {
   const deviceIds = homey.settings.get('geofence_device_ids') || [];
   homey.app.log(`[api:getGeofenceConfig] Returning ${deviceIds.length} configured barrier device IDs`);
   return { deviceIds };
+}
+
+/**
+ * Handles `POST /geofence/event`.
+ *
+ * Receives vehicle arrival or departure geofence notifications from Android Automotive
+ * and fires the appropriate Homey Flow trigger card ('geofence_enter' or 'geofence_exit').
+ *
+ * @public
+ * @param {object} args - Request arguments provided by Homey Web API.
+ * @param {import('homey').Homey} args.homey - The Homey application instance.
+ * @param {object} args.body - Request payload containing transition.
+ * @param {'enter'|'exit'} args.body.transition - The transition type detected by the vehicle.
+ * @returns {Promise<{success: boolean, triggered: string}>} Result of the flow trigger operation.
+ * @throws {Error} If transition argument is missing or invalid, or if firing the trigger card fails.
+ * @example
+ * // Request:
+ * // POST https://{homeyId}.connect.athom.com/api/app/com.dimapp.aaos/geofence/event
+ * // Body: { "transition": "enter" }
+ * //
+ * // Response:
+ * // { "success": true, "triggered": "geofence_enter" }
+ */
+async function postGeofenceEvent({ homey, body }) {
+  const { transition } = body ?? {};
+
+  if (!transition || (transition !== 'enter' && transition !== 'exit')) {
+    homey.app.error('[api:postGeofenceEvent] Invalid or missing transition parameter:', transition);
+    throw Object.assign(new Error('Invalid or missing transition parameter. Must be "enter" or "exit".'), { statusCode: 400 });
+  }
+
+  const cardId = transition === 'enter' ? 'geofence_enter' : 'geofence_exit';
+  homey.app.log(`[api:postGeofenceEvent] Geofence event received: '${transition}'. Triggering card '${cardId}'...`);
+
+  try {
+    const triggerCard = homey.flow.getTriggerCard(cardId);
+    if (!triggerCard) {
+      homey.app.error(`[api:postGeofenceEvent] Trigger card '${cardId}' not found.`);
+      return { success: false, error: `Trigger card '${cardId}' not found.` };
+    }
+
+    await triggerCard.trigger();
+    homey.app.log(`[api:postGeofenceEvent] Flow trigger card '${cardId}' fired successfully.`);
+    return { success: true, triggered: cardId };
+  } catch (err) {
+    homey.app.error(`[api:postGeofenceEvent] Error triggering '${cardId}':`, err.message || err);
+    throw Object.assign(new Error(`Failed to fire flow card: ${err.message || err}`), { statusCode: 500 });
+  }
 }
 
 /**
@@ -596,6 +737,7 @@ module.exports = {
   getZones,
   getLocation,
   getGeofenceConfig,
+  postGeofenceEvent,
   getThermometersConfig,
   getLogStatus,
   getLogDownloadFile,

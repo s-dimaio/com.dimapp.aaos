@@ -1,0 +1,10 @@
+{
+  "title": {
+    "en": "The car left home",
+    "it": "L'auto si è allontanata da casa"
+  },
+  "hint": {
+    "en": "Triggered when Android Automotive exits the home geofence area.",
+    "it": "Attivato quando l'auto esce dal raggio di casa."
+  }
+}

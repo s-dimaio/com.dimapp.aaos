@@ -76,8 +76,12 @@ class HomeyAaosCompanionApp extends Homey.App {
     this._logManager = new LogManager(this);
     await this._logManager.init();
 
-    this.log(`[${TAG}:onInit] Homey AAOS Companion App initialized.`);
+    this.log(`[${TAG}:onInit] Homey AAOS Companion App v${this.manifest.version} initialized.`);
 
+    const homeDevices = this.homey.settings.get('home_devices_ids') || [];
+    const geofenceDevices = this.homey.settings.get('geofence_device_ids') || [];
+    const thermometersConfig = this.homey.settings.get('thermometers_config') || {};
+    this.log(`[${TAG}:onInit] Stored configuration: home_devices=${homeDevices.length}, geofence_devices=${geofenceDevices.length}, thermometers=${Object.keys(thermometersConfig).length}`);
 
     try {
       const lat = this.homey.geolocation.getLatitude();
@@ -138,6 +142,8 @@ class HomeyAaosCompanionApp extends Homey.App {
       'homey.device.readonly',
       'homey.device.control',
       'homey.flow.readonly',
+      'homey.flow.start',
+      'homey.app.readonly',
       'homey.user.self',
     ].join(' ');
 
@@ -262,72 +268,79 @@ class HomeyAaosCompanionApp extends Homey.App {
       const token = await response.json();
       this.log(`[${TAG}:_exchangeCode] Token exchange successful for session ${sessionId.substring(0, 8)}...`);
 
-      // Fetch user profile using the new access token.
-      let userResponse = null;
+      // 1. Verify user profile and hub membership against Athom Cloud
+      this.log(`[${TAG}:_exchangeCode] Verifying hub membership with Athom Cloud for session ${sessionId.substring(0, 8)}...`);
+      const userResponse = await this._verifyHubMembership(token.access_token);
+      this.log(`[${TAG}:_exchangeCode] Hub membership check passed for session ${sessionId.substring(0, 8)}...`);
+
+      const homeyId = await this.homey.cloud.getHomeyId();
+      const homeyApiUrl = `https://${homeyId}.connect.athom.com/api/`;
+      let localHomeyName = 'Homey';
+
+      const ownerSessionToken = await this.homey.api.getOwnerApiToken();
+
+      // Retrieve the hub's user-defined system name via the REST API using the Owner token.
       try {
-        const uRes = await fetch('https://api.athom.com/user/me', { headers: { Authorization: `Bearer ${token.access_token}` } });
-        
-        if (uRes.ok) userResponse = await uRes.json();
-
-        this.log(`[${TAG}:_exchangeCode] User profile fetched successfully.`);
-        
-        const homeyId = await this.homey.cloud.getHomeyId();
-        const homeyApiUrl = `https://${homeyId}.connect.athom.com/api/`;
-        let localHomeyName = 'Homey';
-
-        const ownerSessionToken = await this.homey.api.getOwnerApiToken();
-
-        // Retrieve the hub's user-defined system name locally via the REST API using the Owner token.
+        const nameRes = await fetch(`${homeyApiUrl}manager/system/name`, {
+          headers: { Authorization: `Bearer ${ownerSessionToken}` },
+        });
+        if (nameRes.ok) {
+          const nameData = await nameRes.json();
+          if (typeof nameData === 'string' && nameData.trim()) {
+            localHomeyName = nameData.trim();
+          } else if (nameData && typeof nameData.name === 'string') {
+            localHomeyName = nameData.name.trim();
+          } else if (nameData && typeof nameData.value === 'string') {
+            localHomeyName = nameData.value.trim();
+          }
+        }
+      } catch (nameErr) {
+        this.log(`[${TAG}:_exchangeCode] Could not fetch system name from /manager/system/name, trying fallback: ${nameErr.message}`);
         try {
-          const localUrl = await this.homey.api.getLocalUrl();
-          const nameRes = await fetch(`${localUrl}/api/manager/system`, {
+          const sysRes = await fetch(`${homeyApiUrl}manager/system`, {
             headers: { Authorization: `Bearer ${ownerSessionToken}` },
           });
-          if (nameRes.ok) {
-            const nameData = await nameRes.json();
-            if (nameData && nameData.name) {
-              localHomeyName = nameData.name;
+          if (sysRes.ok) {
+            const sysData = await sysRes.json();
+            if (sysData && typeof sysData.name === 'string') {
+              localHomeyName = sysData.name.trim();
             }
           }
-        } catch (nameErr) {
-          this.log(`[${TAG}:_exchangeCode] Could not fetch local system name, using default: ${nameErr.message}`);
+        } catch (fallbackErr) {
+          this.log(`[${TAG}:_exchangeCode] Could not fetch local system name, using default: ${fallbackErr.message}`);
         }
-
-        this.log(`[${TAG}:_exchangeCode] Hub info obtained for session ${sessionId.substring(0, 8)}... (Hub Name: ${localHomeyName})`);
-
-        let homeLocation = null;
-        try {
-          const lat = this.homey.geolocation.getLatitude();
-          const lng = this.homey.geolocation.getLongitude();
-          if (typeof lat === 'number' && typeof lng === 'number') {
-            homeLocation = { latitude: lat, longitude: lng };
-          }
-        } catch (geoErr) {
-          this.error(`[${TAG}:_exchangeCode] Failed to get geolocation for token:`, geoErr.message);
-        }
-
-        session.status = 'complete';
-        session.token = {
-          session_token: ownerSessionToken,
-          homey_id: homeyId,
-          homey_name: localHomeyName,
-          homey_api_url: homeyApiUrl,
-          athom_refresh_token: token.refresh_token,
-          location: homeLocation,
-          user: userResponse ? {
-            id: userResponse.id || userResponse._id || userResponse.athomId || 'unknown',
-            name: userResponse.name || userResponse.fullname || `${userResponse.firstname || ''} ${userResponse.lastname || ''}`.trim() || 'Homey User',
-            email: userResponse.email,
-          } : null,
-        };
-
-        if (userResponse) {
-          this.log(`[${TAG}:_exchangeCode] Profile keys retrieved: ${Object.keys(userResponse).join(', ')}`);
-        }
-      } catch (fetchErr) {
-        this.error(`[${TAG}:_exchangeCode] Error fetching user profile from Athom:`, fetchErr.message || fetchErr);
-        session.status = 'error';
       }
+
+      this.log(`[${TAG}:_exchangeCode] Hub info obtained for session ${sessionId.substring(0, 8)}... (Hub Name: ${localHomeyName})`);
+
+      let homeLocation = null;
+      try {
+        const lat = this.homey.geolocation.getLatitude();
+        const lng = this.homey.geolocation.getLongitude();
+        if (typeof lat === 'number' && typeof lng === 'number') {
+          homeLocation = { latitude: lat, longitude: lng };
+        }
+      } catch (geoErr) {
+        this.error(`[${TAG}:_exchangeCode] Failed to get geolocation for token:`, geoErr.message);
+      }
+
+      session.status = 'complete';
+      session.token = {
+        session_token: ownerSessionToken,
+        homey_id: homeyId,
+        homey_name: localHomeyName,
+        homey_api_url: homeyApiUrl,
+        athom_refresh_token: token.refresh_token,
+        location: homeLocation,
+        user: {
+          id: userResponse.id || userResponse._id || userResponse.athomId || (userResponse.user && (userResponse.user.id || userResponse.user._id || userResponse.user.athomId)) || 'unknown',
+          name: userResponse.name || userResponse.fullname || (userResponse.user && (userResponse.user.name || userResponse.user.fullname)) || `${userResponse.firstname || (userResponse.user && userResponse.user.firstname) || ''} ${userResponse.lastname || (userResponse.user && userResponse.user.lastname) || ''}`.trim() || 'Homey User',
+          email: userResponse.email || (userResponse.user && userResponse.user.email),
+          role: userResponse.localRole || 'user',
+        },
+      };
+
+      this.log(`[${TAG}:_exchangeCode] Profile keys retrieved: ${Object.keys(userResponse).join(', ')}`);
     } catch (err) {
       this.error(`[${TAG}:_exchangeCode] Token exchange failed for session ${sessionId.substring(0, 8)}...:`, err.message || err);
       session.status = 'error';
@@ -349,10 +362,123 @@ class HomeyAaosCompanionApp extends Homey.App {
   }
 
   /**
+   * Verifies that the authenticated Athom user is registered on this local Homey Pro hub
+   * and holds an authorized role (`owner`, `manager`, or `user` / resident).
+   *
+   * Flow:
+   * 1. Queries Athom Cloud (`GET https://api.athom.com/user/me`) to authenticate the Bearer token
+   *    and extract the verified Athom account identifier (`userId`).
+   * 2. Queries the local Homey Pro User Manager (`GET /api/manager/users/user`) using the owner token
+   *    to verify that `userId` matches a registered local user's `athomId` or `id`.
+   * 3. Inspects the local user's `enabled` status and `role`, explicitly rejecting disabled accounts
+   *    and `guest` users with HTTP 403 Forbidden.
+   *
+   * @private
+   * @async
+   * @param {string} accessToken - The Athom Cloud OAuth2 access token (mandatory).
+   * @returns {Promise<object>} The Athom user profile object enriched with `localRole`.
+   * @throws {Error} If accessToken is missing (HTTP 400), user profile fetch fails (HTTP 401),
+   *                 or if the user is not registered, disabled, or has a `guest` role (HTTP 403).
+   * @example
+   * const userProfile = await this._verifyHubMembership(token.access_token);
+   */
+  async _verifyHubMembership(accessToken) {
+    if (!accessToken || typeof accessToken !== 'string') {
+      throw Object.assign(new Error('Missing or invalid accessToken.'), { statusCode: 400 });
+    }
+
+    this.log(`[${TAG}:_verifyHubMembership] Authenticating user token with Athom Cloud...`);
+
+    const response = await fetch('https://api.athom.com/user/me', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      this.error(`[${TAG}:_verifyHubMembership] Failed to fetch Athom user profile. Status: ${response.status}`, errorText);
+      throw Object.assign(new Error('Failed to retrieve Athom user profile.'), { statusCode: 401 });
+    }
+
+    const userProfile = await response.json();
+    const currentHomeyId = await this.homey.cloud.getHomeyId();
+
+    const maskId = id => (typeof id === 'string' && id.length > 8 ? `${id.substring(0, 4)}***${id.slice(-4)}` : '***');
+    const maskedHomeyId = maskId(currentHomeyId);
+
+    const userId = userProfile.id
+      || userProfile._id
+      || userProfile.athomId
+      || (userProfile.user && (userProfile.user.id || userProfile.user._id || userProfile.user.athomId))
+      || null;
+
+    if (!userId) {
+      this.error(`[${TAG}:_verifyHubMembership] Security rejection: Could not extract user ID from Athom profile.`);
+      throw Object.assign(new Error('Invalid Athom user profile.'), { statusCode: 401 });
+    }
+
+    const maskedUserId = maskId(userId);
+
+    // Query Local Homey Pro User Registry
+    let usersList = [];
+    try {
+      const localUrl = await this.homey.api.getLocalUrl();
+      const ownerToken = await this.homey.api.getOwnerApiToken();
+      const usersResponse = await fetch(`${localUrl}/api/manager/users/user`, {
+        headers: { Authorization: `Bearer ${ownerToken}` },
+      });
+
+      if (!usersResponse.ok) {
+        this.error(`[${TAG}:_verifyHubMembership] Local users API responded with HTTP ${usersResponse.status}.`);
+        throw new Error(`Local users API failed with status ${usersResponse.status}`);
+      }
+
+      const usersData = await usersResponse.json();
+      usersList = Array.isArray(usersData) ? usersData : Object.values(usersData || {});
+    } catch (localErr) {
+      this.error(`[${TAG}:_verifyHubMembership] Failed to query local users registry:`, localErr.message || localErr);
+      throw Object.assign(new Error('Failed to verify local hub users registry.'), { statusCode: 500 });
+    }
+
+    const matchedLocalUser = usersList.find(u => u && (
+      (u.athomId && u.athomId === userId) ||
+      (u.id && u.id === userId) ||
+      (u._id && u._id === userId)
+    ));
+
+    if (!matchedLocalUser) {
+      this.error(`[${TAG}:_verifyHubMembership] Security rejection: Authenticated user '${maskedUserId}' is not registered on hub '${maskedHomeyId}' (localUsersCount=${usersList.length}). Access denied.`);
+      throw Object.assign(new Error('User is not authorized on this Homey hub.'), { statusCode: 403 });
+    }
+
+    const userRole = typeof matchedLocalUser.role === 'string' ? matchedLocalUser.role.toLowerCase() : 'unknown';
+    const isEnabled = matchedLocalUser.enabled !== false;
+    const isPresent = Boolean(matchedLocalUser.present);
+    const isAsleep = Boolean(matchedLocalUser.asleep);
+    const localUserKeys = Object.keys(matchedLocalUser).join(', ');
+
+    this.log(`[${TAG}:_verifyHubMembership] Local user found on hub '${maskedHomeyId}': user='${maskedUserId}', role='${userRole}', enabled=${isEnabled}, present=${isPresent}, asleep=${isAsleep}, keys=[${localUserKeys}]`);
+
+    if (!isEnabled) {
+      this.error(`[${TAG}:_verifyHubMembership] Security rejection: User '${maskedUserId}' is disabled on hub '${maskedHomeyId}'. Access denied.`);
+      throw Object.assign(new Error('User account is disabled on this Homey hub.'), { statusCode: 403 });
+    }
+
+    if (userRole === 'guest') {
+      this.error(`[${TAG}:_verifyHubMembership] Security rejection: User '${maskedUserId}' has role 'guest' on hub '${maskedHomeyId}'. Guest accounts are not permitted. Access denied.`);
+      throw Object.assign(new Error('Guest users are not authorized to access this Homey hub.'), { statusCode: 403 });
+    }
+
+    this.log(`[${TAG}:_verifyHubMembership] Security check passed: User '${maskedUserId}' (role='${userRole}') is authorized for hub '${maskedHomeyId}'.`);
+
+    userProfile.localRole = userRole;
+    return userProfile;
+  }
+
+  /**
    * Refreshes the OAuth access token using the Athom Cloud OAuth2 refresh_token.
    *
    * Verifies the token by exchanging it with Athom Cloud. When Athom returns a new token pair,
-   * returns the refreshed tokens to the caller for ongoing API operations.
+   * re-verifies that the user still has membership access to this hub before delivering the refreshed tokens.
    *
    * @public
    * @param {string} athomRefreshToken - The refresh_token from the Athom Cloud.
@@ -386,18 +512,21 @@ class HomeyAaosCompanionApp extends Homey.App {
 
       // We successfully got a new OAuth token pair from Athom
       const newAthomTokens = await response.json();
-
       this.log(`[${TAG}:refreshAuthSession] OAuth token successfully refreshed via Athom Cloud.`);
 
-      // Generate a fresh local owner session token for Homey Pro
-      const newSessionToken = await this.homey.api.getOwnerApiToken();
+      // 2. Re-verify that user still has active membership permissions for this hub
+      this.log(`[${TAG}:refreshAuthSession] Re-verifying hub membership permissions for refreshed token...`);
+      await this._verifyHubMembership(newAthomTokens.access_token);
+      this.log(`[${TAG}:refreshAuthSession] Hub membership check passed for token refresh.`);
+
+      const ownerSessionToken = await this.homey.api.getOwnerApiToken();
 
       return {
-        session_token: newSessionToken,
+        session_token: ownerSessionToken,
         athom_refresh_token: newAthomTokens.refresh_token,
       };
     } catch (err) {
-      if (err.statusCode === 401) throw err;
+      if (err.statusCode === 401 || err.statusCode === 403) throw err;
       this.error(`[${TAG}:refreshAuthSession] Failed to refresh auth session:`, err.message || err);
       throw Object.assign(new Error('Internal error during token refresh.'), { statusCode: 500 });
     }
@@ -529,6 +658,10 @@ class HomeyAaosCompanionApp extends Homey.App {
   /**
    * Triggers a standard or advanced Homey flow via the privileged HomeyScript proxy.
    *
+   * Validates that flowId is a valid UUID format, enforces boolean isAdvanced parameter,
+   * serializes arguments safely via JSON.stringify, and avoids any string interpolation
+   * vulnerabilities inside HomeyScript code generation.
+   *
    * @public
    * @param {string} flowId - The UUID of the target Flow.
    * @param {boolean} [isAdvanced=false] - Whether the target flow is an Advanced Flow.
@@ -539,17 +672,25 @@ class HomeyAaosCompanionApp extends Homey.App {
    * await homey.app.triggerFlow('123e4567-e89b-12d3-a456-426614174000', true);
    */
   async triggerFlow(flowId, isAdvanced = false, args = {}) {
-    if (!flowId || typeof flowId !== 'string') {
-      throw new Error('Missing or invalid flowId parameter.');
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const trimmedId = typeof flowId === 'string' ? flowId.trim() : '';
+
+    if (!trimmedId || !UUID_REGEX.test(trimmedId)) {
+      this.error(`[${TAG}:triggerFlow] Security rejection: Invalid flowId '${trimmedId}'. Standard UUID format required.`);
+      throw Object.assign(new Error('Missing or invalid flowId parameter. Must be a valid UUID.'), { statusCode: 400 });
     }
 
-    const method = isAdvanced ? 'triggerAdvancedFlow' : 'triggerFlow';
-    const argsStr = args && Object.keys(args).length > 0 ? JSON.stringify(args) : 'null';
-    const code = `await Homey.flow.${method}({ id: "${flowId}" }, ${argsStr});`;
+    const safeIsAdvanced = isAdvanced === true;
+    const method = safeIsAdvanced ? 'triggerAdvancedFlow' : 'triggerFlow';
 
-    this.log(`[${TAG}:triggerFlow] Executing flow '${flowId}' (isAdvanced=${isAdvanced}) via HomeyScript proxy...`);
+    // Safely encode parameters using JSON.stringify to completely prevent script injection
+    const safeId = JSON.stringify(trimmedId);
+    const safeArgs = args && typeof args === 'object' && !Array.isArray(args) ? JSON.stringify(args) : 'null';
+    const code = `await Homey.flow.${method}({ id: ${safeId} }, ${safeArgs});`;
+
+    this.log(`[${TAG}:triggerFlow] Security validation passed for flow '${trimmedId}'. Executing method '${method}' via HomeyScript proxy...`);
     await this._executeHomeyScript(code);
-    this.log(`[${TAG}:triggerFlow] Flow '${flowId}' triggered successfully.`);
+    this.log(`[${TAG}:triggerFlow] Flow '${trimmedId}' triggered successfully.`);
 
     return { success: true, message: 'Flow triggered successfully.' };
   }

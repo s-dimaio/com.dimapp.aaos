@@ -1,7 +1,7 @@
 {
   "_comment": "This file is generated. Please edit .homeycompose/app.json instead.",
   "id": "com.dimapp.aaos",
-  "version": "1.3.0",
+  "version": "1.5.2",
   "compatibility": ">=12.0.0",
   "sdk": 3,
   "brandColor": "#3DDC84",
@@ -58,38 +58,35 @@
     },
     "triggerFlow": {
       "method": "POST",
-      "path": "/flow/trigger",
-      "public": true
+      "path": "/flow/trigger"
     },
     "getDashboards": {
       "method": "GET",
-      "path": "/dashboards",
-      "public": true
+      "path": "/dashboards"
     },
     "getDevices": {
       "method": "GET",
-      "path": "/devices",
-      "public": true
+      "path": "/devices"
     },
     "getZones": {
       "method": "GET",
-      "path": "/zones",
-      "public": true
+      "path": "/zones"
     },
     "getLocation": {
       "method": "GET",
-      "path": "/location",
-      "public": true
+      "path": "/location"
     },
     "getGeofenceConfig": {
       "method": "GET",
-      "path": "/geofence",
-      "public": true
+      "path": "/geofence"
+    },
+    "postGeofenceEvent": {
+      "method": "POST",
+      "path": "/geofence/event"
     },
     "getThermometersConfig": {
       "method": "GET",
-      "path": "/thermometers",
-      "public": true
+      "path": "/thermometers"
     },
     "getLogStatus": {
       "method": "GET",
@@ -111,5 +108,31 @@
   "source": "https://github.com/s-dimaio/com.dimapp.aaos",
   "bugs": {
     "url": "https://github.com/s-dimaio/com.dimapp.aaos/issues"
+  },
+  "flow": {
+    "triggers": [
+      {
+        "title": {
+          "en": "The car is approaching home",
+          "it": "L'auto si sta avvicinando a casa"
+        },
+        "hint": {
+          "en": "Triggered when Android Automotive enters the home geofence area.",
+          "it": "Attivato quando l'auto entra nel raggio di casa."
+        },
+        "id": "geofence_enter"
+      },
+      {
+        "title": {
+          "en": "The car left home",
+          "it": "L'auto si è allontanata da casa"
+        },
+        "hint": {
+          "en": "Triggered when Android Automotive exits the home geofence area.",
+          "it": "Attivato quando l'auto esce dal raggio di casa."
+        },
+        "id": "geofence_exit"
+      }
+    ]
   }
 }

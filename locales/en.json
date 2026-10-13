@@ -19,7 +19,9 @@
       "climate_title": "Thermometers & Climate",
       "climate_desc": "Configure which sensors to consider for indoor and outdoor temperatures.",
       "debug_title": "Debug & Diagnostics",
-      "debug_desc": "Manage debug logging and diagnostic options."
+      "debug_desc": "Manage debug logging and diagnostic options.",
+      "guide_title": "Guide & Instructions",
+      "guide_desc": "Learn how to configure, pair, and use the app on your car."
     },
     "climate": {
       "title": "Thermometers & Climate",
@@ -53,6 +55,7 @@
     "home_config": {
       "title": "Home Tab Devices",
       "subtitle": "Select up to 9 devices. If none are selected your Favorite devices will be shown.",
+      "notice_info": "Only lights, locks, garage doors, and doorbells are supported. If a smart plug or relay controlling a light is missing, open its device settings in Homey and set 'What's plugged in?' to 'Light'.",
       "homeyscript_alert": "To run Homey Flows from Android Automotive, make sure the official HomeyScript app is installed on your Homey Pro.",
       "search_placeholder": "Search device",
       "max_reached": "You have reached the maximum limit of 9 devices.",
@@ -67,6 +70,27 @@
       "max_reached": "You can enable a maximum of 3 barriers for vehicle notifications.",
       "loading": "Loading barriers...",
       "no_barriers": "No gates, garage doors, or locks found."
+    },
+    "guide": {
+      "title": "User Guide",
+      "subtitle": "Information about app architecture, initial login procedure, and system requirements.",
+      "companion_title": "Homey for Android Automotive App",
+      "companion_desc": "This Homey application acts as a companion for the main app installed on your car's infotainment system. It securely connects your smart home to your vehicle, synchronizes your preferences, and allows you to control lights, locks, and barriers directly from the car's display.",
+      "store_desc": "You can download the primary car app for Android Automotive directly from the built-in Google Play Store on your compatible vehicle (Volvo, Polestar, Renault, etc.):",
+      "store_btn_sub": "GET IT ON",
+      "store_btn_main": "Google Play",
+      "login_title": "Initial Login Procedure",
+      "login_step1_title": "Enter your Homey ID on the car display",
+      "login_step1_desc": "When launching the car app, enter your Homey Pro ID to initiate the connection session.",
+      "login_step2_title": "Scan the QR code with your smartphone",
+      "login_step2_desc": "A unique QR code will appear on the car display: scan it with your phone camera to open the authorization page.",
+      "login_step3_title": "Complete login on your smartphone",
+      "login_step3_desc": "Sign in with your Athom account and authorize the requested access permissions.",
+      "login_step4_title": "Automatic loading on Android Automotive",
+      "login_step4_desc": "Once finished on your smartphone, the car app will finalize pairing within seconds and automatically load your devices, barriers, and preferences.",
+      "requirements_title": "Requirements & Important Notes",
+      "platform_alert": "This application is natively designed for Android Automotive OS (built into the vehicle infotainment with Google built-in) and is not compatible with Android Auto (smartphone projection).",
+      "flows_desc": "To trigger and run your Advanced Flows and Standard Flows from your car display, the official HomeyScript app must be installed and active on your Homey Pro."
     },
     "common": {
       "save": "Save",

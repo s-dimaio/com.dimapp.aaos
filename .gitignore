@@ -11,3 +11,6 @@ node_modules/
 release.ps1
 AI_PROJECT_HANDBOOK.md
 test_env_flows.js
+test/
+/test/
+test_*.js

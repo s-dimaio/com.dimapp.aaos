@@ -13,3 +13,7 @@ node_modules/
 /img
 release.ps1
 AI_PROJECT_HANDBOOK.md
+test/
+/test/
+test_*.js
+test_env_flows.js

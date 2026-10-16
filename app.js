@@ -14,6 +14,36 @@ const TAG = 'HomeyAaosCompanionApp';
 const SESSION_TTL_MS = 2 * 60 * 1000; // 2 minutes
 
 /**
+ * @constant {number} MAX_PENDING_SESSIONS
+ * Maximum number of concurrent pending authentication sessions kept in memory.
+ */
+const MAX_PENDING_SESSIONS = 3;
+
+/**
+ * @constant {number} RATE_LIMIT_AUTH_START_MAX
+ * Maximum allowed invocations of startAuth within the sliding window.
+ */
+const RATE_LIMIT_AUTH_START_MAX = 5;
+
+/**
+ * @constant {number} RATE_LIMIT_AUTH_START_WINDOW_MS
+ * Duration of the sliding rate limiting window for startAuth (5 minutes in milliseconds).
+ */
+const RATE_LIMIT_AUTH_START_WINDOW_MS = 5 * 60 * 1000;
+
+/**
+ * @constant {number} RATE_LIMIT_AUTH_REFRESH_MAX
+ * Maximum allowed invocations of refreshAuth within the sliding window.
+ */
+const RATE_LIMIT_AUTH_REFRESH_MAX = 10;
+
+/**
+ * @constant {number} RATE_LIMIT_AUTH_REFRESH_WINDOW_MS
+ * Duration of the sliding rate limiting window for refreshAuth (5 minutes in milliseconds).
+ */
+const RATE_LIMIT_AUTH_REFRESH_WINDOW_MS = 5 * 60 * 1000;
+
+/**
  * @constant {string} ATHOM_TOKEN_URL
  * Athom Cloud OAuth2 token endpoint used to exchange the authorization code for tokens.
  */
@@ -46,10 +76,11 @@ class HomeyAaosCompanionApp extends Homey.App {
    * Each entry has shape:
    * ```js
    * {
-   *   authUrl: string,       // The Athom authorization URL to show as QR
+   *   authUrl: string,              // The Athom authorization URL to show as QR
    *   status:  'pending'|'complete'|'error',
-   *   token:   object|null,  // access_token, refresh_token, expires_in (when complete)
-   *   timer:   TimeoutId     // auto-cleanup handle
+   *   token:   object|null,         // access_token, refresh_token, expires_in (when complete)
+   *   timer:   TimeoutId,           // auto-cleanup handle
+   *   oauthCallback: object|null    // Homey Cloud OAuth2 callback object for listener cleanup
    * }
    * ```
    * @private
@@ -58,11 +89,25 @@ class HomeyAaosCompanionApp extends Homey.App {
   _sessions = new Map();
 
   /**
+   * In-memory sliding window rate limiter timestamp log keyed by action identifier.
+   * @private
+   * @type {Map<string, number[]>}
+   */
+  _rateLimits = new Map();
+
+  /**
    * Cached identifier of the HomeyScript execution proxy script.
    * @private
    * @type {string|null}
    */
   _homeyScriptProxyId = null;
+
+  /**
+   * Internal guard preventing recursive logging during LogManager operations.
+   * @private
+   * @type {boolean}
+   */
+  _isLoggingInternal = false;
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -110,7 +155,8 @@ class HomeyAaosCompanionApp extends Homey.App {
   /**
    * Creates a new OAuth2 auth session for a given sessionId.
    *
-   * Internally calls `this.homey.cloud.createOAuth2Callback(authorizationUrl)`.
+   * Enforces sliding window rate limiting (max 5 requests per 5 minutes) and memory pool
+   * constraints (maximum 3 concurrent sessions). Internally calls `this.homey.cloud.createOAuth2Callback(baseAuthUrl)`.
    * Athom replaces the `redirect_uri` with `https://callback.athom.com/oauth2/callback/{TOKEN}`
    * and emits:
    *  - `url`  → the modified authorization URL (to be shown as QR code on the car screen)
@@ -120,18 +166,30 @@ class HomeyAaosCompanionApp extends Homey.App {
    * @param {string} sessionId - A 64-character hex string generated with SecureRandom by the
    *                             AAOS app. Used as a unique session identifier.
    * @returns {Promise<{authUrl: string}>} The authorization URL to display as QR code.
-   * @throws {Error} If sessionId is missing, or if `createOAuth2Callback` fails.
+   * @throws {Error} If rate limit is exceeded (HTTP 429), sessionId is missing (HTTP 400), or OAuth callback creation fails.
    * @example
    * // Called from api.js:
    * const { authUrl } = await homey.app.startAuthSession('a1b2c3...');
    */
   async startAuthSession(sessionId) {
+    // 1. Enforce sliding window rate limit (max 5 requests per 5 minutes)
+    this._checkRateLimit('auth_start', RATE_LIMIT_AUTH_START_MAX, RATE_LIMIT_AUTH_START_WINDOW_MS);
+
     if (!sessionId || typeof sessionId !== 'string') {
-      throw new Error('Missing or invalid sessionId.');
+      throw Object.assign(new Error('Missing or invalid sessionId.'), { statusCode: 400 });
     }
 
-    // Invalidate any pre-existing session for this ID
+    // 2. Invalidate any pre-existing session for this ID
     this._destroySession(sessionId);
+
+    // 3. Enforce memory pool cap: prune oldest pending session if pool is full
+    if (this._sessions.size >= MAX_PENDING_SESSIONS) {
+      const oldestSessionId = this._sessions.keys().next().value;
+      if (oldestSessionId) {
+        this.log(`[${TAG}:startAuthSession] Session pool cap reached (${MAX_PENDING_SESSIONS}). Pruning oldest session ${oldestSessionId.substring(0, 8)}...`);
+        this._destroySession(oldestSessionId);
+      }
+    }
 
     this.log(`[${TAG}:startAuthSession] Creating OAuth2 callback for session ${sessionId.substring(0, 8)}...`);
 
@@ -161,10 +219,10 @@ class HomeyAaosCompanionApp extends Homey.App {
           oauthCallback.on('url', (authUrl) => {
             this.log(`[${TAG}:startAuthSession] Auth URL generated for session ${sessionId.substring(0, 8)}...: ${authUrl}`);
 
-            // Store session in memory
+            // Store session in memory with reference to oauthCallback for listener cleanup
             const timer = setTimeout(() => {
               this.log(`[${TAG}:startAuthSession] Session ${sessionId.substring(0, 8)}... expired.`);
-              this._sessions.delete(sessionId);
+              this._destroySession(sessionId);
             }, SESSION_TTL_MS);
 
             this._sessions.set(sessionId, {
@@ -172,6 +230,7 @@ class HomeyAaosCompanionApp extends Homey.App {
               status: 'pending',
               token: null,
               timer,
+              oauthCallback,
             });
 
             // Respond to the AAOS app immediately with the QR URL
@@ -179,12 +238,12 @@ class HomeyAaosCompanionApp extends Homey.App {
           });
 
           oauthCallback.on('code', async (code) => {
-            this.log(`${TAG}: Authorization code received for session ${sessionId.substring(0, 8)}...`);
+            this.log(`[${TAG}:startAuthSession] Authorization code received for session ${sessionId.substring(0, 8)}...`);
             await this._exchangeCode(sessionId, code);
           });
         })
         .catch((err) => {
-          this.error(`${TAG}: Failed to create OAuth2 callback.`, err);
+          this.error(`[${TAG}:startAuthSession] Failed to create OAuth2 callback:`, err.message || err);
           reject(err);
         });
     });
@@ -348,17 +407,60 @@ class HomeyAaosCompanionApp extends Homey.App {
   }
 
   /**
-   * Cancels the cleanup timer for a session and removes it from the session map.
+   * Cancels the cleanup timer, removes registered event listeners, and deletes the session from memory.
    *
    * @private
-   * @param {string} sessionId - The session identifier to destroy.
+   * @param {string} sessionId - The session identifier to destroy (mandatory).
+   * @returns {void}
+   * @example
+   * this._destroySession('a1b2c3d4...');
    */
   _destroySession(sessionId) {
     const session = this._sessions.get(sessionId);
     if (session) {
-      clearTimeout(session.timer);
+      if (session.timer) {
+        clearTimeout(session.timer);
+      }
+      if (session.oauthCallback && typeof session.oauthCallback.removeAllListeners === 'function') {
+        try {
+          session.oauthCallback.removeAllListeners();
+        } catch (err) {
+          this.error(`[${TAG}:_destroySession] Failed to remove listeners from oauthCallback:`, err.message || err);
+        }
+      }
       this._sessions.delete(sessionId);
+      this.log(`[${TAG}:_destroySession] Session ${sessionId.substring(0, 8)}... destroyed and cleaned up from pool.`);
     }
+  }
+
+  /**
+   * Enforces a sliding window in-memory rate limit for sensitive public operations.
+   *
+   * Prunes expired timestamps older than `windowMs` and verifies that the total
+   * request count within the active window does not exceed `maxRequests`.
+   * If the limit is exceeded, logs a security error and throws an HTTP 429 exception.
+   *
+   * @private
+   * @param {string} actionKey - Unique key identifying the operation being rate-limited (mandatory).
+   * @param {number} maxRequests - Maximum number of requests permitted within the time window (mandatory).
+   * @param {number} windowMs - Duration of the sliding time window in milliseconds (mandatory).
+   * @returns {void}
+   * @throws {Error} If request frequency exceeds maxRequests within windowMs (HTTP 429).
+   * @example
+   * this._checkRateLimit('auth_start', 5, 300000);
+   */
+  _checkRateLimit(actionKey, maxRequests, windowMs) {
+    const now = Date.now();
+    const timestamps = this._rateLimits.get(actionKey) || [];
+    const validTimestamps = timestamps.filter(ts => (now - ts) < windowMs);
+
+    if (validTimestamps.length >= maxRequests) {
+      this.error(`[${TAG}:_checkRateLimit] Security rejection: Rate limit exceeded for action '${actionKey}' (${validTimestamps.length}/${maxRequests} in ${windowMs}ms).`);
+      throw Object.assign(new Error(`Rate limit exceeded for ${actionKey}. Please try again later.`), { statusCode: 429 });
+    }
+
+    validTimestamps.push(now);
+    this._rateLimits.set(actionKey, validTimestamps);
   }
 
   /**
@@ -477,20 +579,28 @@ class HomeyAaosCompanionApp extends Homey.App {
   /**
    * Refreshes the OAuth access token using the Athom Cloud OAuth2 refresh_token.
    *
+   * Enforces sliding window rate limiting (max 10 requests per 5 minutes).
    * Verifies the token by exchanging it with Athom Cloud. When Athom returns a new token pair,
    * re-verifies that the user still has membership access to this hub before delivering the refreshed tokens.
    *
    * @public
-   * @param {string} athomRefreshToken - The refresh_token from the Athom Cloud.
+   * @param {string} athomRefreshToken - The refresh_token from the Athom Cloud (mandatory).
    * @returns {Promise<{session_token: string, athom_refresh_token: string}>} The new tokens.
+   * @throws {Error} If rate limit is exceeded (HTTP 429), token is invalid/expired (HTTP 401),
+   *                 user is not authorized on hub (HTTP 403), or token exchange fails.
+   * @example
+   * const tokens = await homey.app.refreshAuthSession('eyJhbGciOi...');
    */
   async refreshAuthSession(athomRefreshToken) {
-    if (!athomRefreshToken) {
-      throw Object.assign(new Error('Missing athom_refresh_token.'), { statusCode: 401 });
+    // 1. Enforce sliding window rate limit (max 10 requests per 5 minutes)
+    this._checkRateLimit('auth_refresh', RATE_LIMIT_AUTH_REFRESH_MAX, RATE_LIMIT_AUTH_REFRESH_WINDOW_MS);
+
+    if (!athomRefreshToken || typeof athomRefreshToken !== 'string') {
+      throw Object.assign(new Error('Missing or invalid athom_refresh_token.'), { statusCode: 400 });
     }
 
     try {
-      // 1. Verify and rotate the refresh_token via Athom Cloud
+      // 2. Verify and rotate the refresh_token via Athom Cloud
       const body = new URLSearchParams({
         grant_type: 'refresh_token',
         refresh_token: athomRefreshToken,
@@ -514,7 +624,7 @@ class HomeyAaosCompanionApp extends Homey.App {
       const newAthomTokens = await response.json();
       this.log(`[${TAG}:refreshAuthSession] OAuth token successfully refreshed via Athom Cloud.`);
 
-      // 2. Re-verify that user still has active membership permissions for this hub
+      // 3. Re-verify that user still has active membership permissions for this hub
       this.log(`[${TAG}:refreshAuthSession] Re-verifying hub membership permissions for refreshed token...`);
       await this._verifyHubMembership(newAthomTokens.access_token);
       this.log(`[${TAG}:refreshAuthSession] Hub membership check passed for token refresh.`);
@@ -526,7 +636,7 @@ class HomeyAaosCompanionApp extends Homey.App {
         athom_refresh_token: newAthomTokens.refresh_token,
       };
     } catch (err) {
-      if (err.statusCode === 401 || err.statusCode === 403) throw err;
+      if (err.statusCode && err.statusCode < 500) throw err;
       this.error(`[${TAG}:refreshAuthSession] Failed to refresh auth session:`, err.message || err);
       throw Object.assign(new Error('Internal error during token refresh.'), { statusCode: 500 });
     }
@@ -725,6 +835,85 @@ class HomeyAaosCompanionApp extends Homey.App {
   }
 
   /**
+   * Overrides {@link Homey.App#log} to print to standard console (stdout) and mirror sanitized
+   * messages to the persistent LogManager diagnostic file when debug logging is active.
+   *
+   * @public
+   * @param {...any} args - Log messages or objects to output.
+   * @returns {void}
+   * @example
+   * this.log('[Auth:start] Initializing pairing session');
+   */
+  log(...args) {
+    super.log(...args);
+    if (this._isLoggingInternal) return;
+    if (this._logManager && this._logManager.isDebugEnabled()) {
+      try {
+        this._isLoggingInternal = true;
+        const sanitizedArgs = args.map(arg => this._sanitizeLogPayload(arg));
+        const formatted = sanitizedArgs.map(arg => {
+          if (arg === null || arg === undefined) return String(arg);
+          if (typeof arg === 'object') {
+            try { return JSON.stringify(arg); } catch (e) { return String(arg); }
+          }
+          return String(arg);
+        }).join(' ');
+
+        const match = formatted.match(/^\[([a-zA-Z0-9_\-:]+)\]\s*(.*)$/s);
+        const tag = match ? match[1] : TAG;
+        const message = match ? match[2] : formatted;
+
+        this._logManager.writeLog('INFO', tag, message);
+      } catch (err) {
+        // Ignored to prevent runtime interruption during logging
+      } finally {
+        this._isLoggingInternal = false;
+      }
+    }
+  }
+
+  /**
+   * Overrides {@link Homey.App#error} to print to standard error console (stderr) and mirror sanitized
+   * error messages to the persistent LogManager diagnostic file.
+   *
+   * @public
+   * @param {...any} args - Error messages, Error instances, or objects to output.
+   * @returns {void}
+   * @example
+   * this.error('[Auth:exchange] Code exchange failed:', error.message);
+   */
+  error(...args) {
+    super.error(...args);
+    if (this._isLoggingInternal) return;
+    if (this._logManager) {
+      try {
+        this._isLoggingInternal = true;
+        const sanitizedArgs = args.map(arg => this._sanitizeLogPayload(arg));
+        const formatted = sanitizedArgs.map(arg => {
+          if (arg === null || arg === undefined) return String(arg);
+          if (arg instanceof Error) {
+            return `${arg.message || ''}${arg.stack ? `\n${arg.stack}` : ''}`;
+          }
+          if (typeof arg === 'object') {
+            try { return JSON.stringify(arg); } catch (e) { return String(arg); }
+          }
+          return String(arg);
+        }).join(' ');
+
+        const match = formatted.match(/^\[([a-zA-Z0-9_\-:]+)\]\s*(.*)$/s);
+        const tag = match ? match[1] : TAG;
+        const message = match ? match[2] : formatted;
+
+        this._logManager.writeLog('ERROR', tag, message);
+      } catch (err) {
+        // Ignored to prevent runtime interruption during logging
+      } finally {
+        this._isLoggingInternal = false;
+      }
+    }
+  }
+
+  /**
    * Emits a structured debug log message if debug logging is enabled in settings.
    * Adheres strictly to the logging system guidelines:
    * - Format: [ClassName:methodName] message
@@ -742,33 +931,51 @@ class HomeyAaosCompanionApp extends Homey.App {
   debugLog(tag, ...args) {
     if (!this.isDebugLoggingEnabled()) return;
     const sanitizedArgs = args.map(arg => this._sanitizeLogPayload(arg));
-    this.log(`[DEBUG] [${tag}]`, ...sanitizedArgs);
+    super.log(`[DEBUG] [${tag}]`, ...sanitizedArgs);
     if (this._logManager) {
-      this._logManager.writeLog('DEBUG', tag, sanitizedArgs.join(' '));
+      const formattedMessage = sanitizedArgs.map(arg => {
+        if (arg === null || arg === undefined) return String(arg);
+        if (typeof arg === 'object') {
+          try {
+            return JSON.stringify(arg);
+          } catch (e) {
+            return String(arg);
+          }
+        }
+        return String(arg);
+      }).join(' ');
+      this._logManager.writeLog('DEBUG', tag, formattedMessage);
     }
   }
 
   /**
    * Sanitizes a log payload by masking sensitive tokens, passwords, emails, and GPS coordinates.
+   * Delegates string masking to {@link LogManager.sanitize}.
    *
    * @private
    * @param {any} payload - Data payload to sanitize.
    * @returns {any} Sanitized payload safe for logging.
+   * @example
+   * const safeObj = this._sanitizeLogPayload({ token: 'abc', lat: 45.1 });
    */
   _sanitizeLogPayload(payload) {
     if (payload === null || payload === undefined) return payload;
+    if (payload instanceof Error) {
+      const sanitizedMessage = LogManager.sanitize(payload.message || '');
+      const sanitizedStack = payload.stack ? LogManager.sanitize(payload.stack) : undefined;
+      const cleanError = new Error(sanitizedMessage);
+      if (sanitizedStack) cleanError.stack = sanitizedStack;
+      if (payload.code) cleanError.code = payload.code;
+      if (payload.statusCode) cleanError.statusCode = payload.statusCode;
+      return cleanError;
+    }
     if (typeof payload === 'string') {
-      return payload
-        .replace(/\bBearer\s+[A-Za-z0-9\-._~+/]+/gi, 'Bearer ***MASKED***')
-        .replace(/\b(password|client_secret|access_token|refresh_token|token)(["']?\s*[:=]\s*["']?)([^"'\s&,;]{1,500})(["']?)/gi, '$1$2***MASKED***$4')
-        .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,10}\b/gi, '***@***.***')
-        .replace(/lat(itude)?\s*[:=]\s*-?\d+(\.\d+)?/gi, 'lat=***')
-        .replace(/lng|long(itude)?\s*[:=]\s*-?\d+(\.\d+)?/gi, 'lng=***');
+      return LogManager.sanitize(payload);
     }
     if (typeof payload === 'object') {
       try {
         const str = JSON.stringify(payload);
-        const sanitizedStr = this._sanitizeLogPayload(str);
+        const sanitizedStr = LogManager.sanitize(str);
         return JSON.parse(sanitizedStr);
       } catch (err) {
         return '[Complex Object]';

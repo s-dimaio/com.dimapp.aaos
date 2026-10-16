@@ -65,7 +65,7 @@
     "geofence": {
       "title": "Varchi per Avvisi di Prossimità",
       "subtitle": "Attiva gli avvisi per i cancelli o garage che desideri controllare. Ogni varco attivo avrà un pulsante dedicato nella notifica dell'auto.",
-      "notice_info": "Tutti i varchi sono disattivati di default. Attiva lo switch solo per i cancelli o garage (massimo 3) che desideri aprire o chiudere dall'auto.",
+      "notice_info": "Tutti i varchi sono disattivati di default. Attiva lo switch solo per i cancelli o garage (massimo 3) che desideri aprire o chiudere dalla notifica dell'auto.",
       "search_placeholder": "Cerca cancello o garage",
       "max_reached": "Puoi attivare al massimo 3 varchi per le notifiche dell'auto.",
       "loading": "Caricamento varchi...",

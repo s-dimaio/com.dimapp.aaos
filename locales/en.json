@@ -65,7 +65,7 @@
     "geofence": {
       "title": "Proximity Alert Barriers",
       "subtitle": "Enable alerts for gates or garage doors you want to control. Each active barrier will have a dedicated action button in the vehicle notification.",
-      "notice_info": "All barriers are disabled by default. Toggle the switch only for gates or garage doors (maximum 3) you want to control from your car.",
+      "notice_info": "All barriers are disabled by default. Toggle the switch only for gates or garage doors (maximum 3) you want to control from your car notification.",
       "search_placeholder": "Search gate or garage door",
       "max_reached": "You can enable a maximum of 3 barriers for vehicle notifications.",
       "loading": "Loading barriers...",

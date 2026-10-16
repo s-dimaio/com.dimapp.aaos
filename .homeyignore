@@ -11,6 +11,7 @@ node_modules/
 
 /.agent
 /img
+/log
 release.ps1
 AI_PROJECT_HANDBOOK.md
 test/

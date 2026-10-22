@@ -128,6 +128,9 @@ class HomeyAaosCompanionApp extends Homey.App {
     const thermometersConfig = this.homey.settings.get('thermometers_config') || {};
     this.log(`[${TAG}:onInit] Stored configuration: home_devices=${homeDevices.length}, geofence_devices=${geofenceDevices.length}, thermometers=${Object.keys(thermometersConfig).length}`);
 
+    const climateClasses = Homey.env.CLIMATE_DEVICE_CLASSES || 'sensor,thermostat,heater,airconditioning (default)';
+    this.log(`[${TAG}:onInit] Allowed climate device classes: ${climateClasses}`);
+
     try {
       const lat = this.homey.geolocation.getLatitude();
       const lng = this.homey.geolocation.getLongitude();

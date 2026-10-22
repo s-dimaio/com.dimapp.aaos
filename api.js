@@ -1,5 +1,7 @@
 'use strict';
 
+const Homey = require('homey');
+
 /**
  * API route handlers for the Homey AAOS Companion app.
  *
@@ -22,6 +24,39 @@
 const SESSION_ID_REGEX = /^[0-9a-fA-F]{64}$/;
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Default device classes considered valid environmental/climate temperature sources.
+ * @constant {string[]}
+ */
+const DEFAULT_CLIMATE_CLASSES = ['sensor', 'thermostat', 'heater', 'airconditioning'];
+
+/**
+ * Retrieves the set of device classes allowed for climate temperature readings.
+ * Uses environment variable `CLIMATE_DEVICE_CLASSES` (comma-separated) if defined in env.json,
+ * falling back to {@link DEFAULT_CLIMATE_CLASSES}.
+ *
+ * @private
+ * @returns {Set<string>} Set of lowercase allowed class names.
+ * @example
+ * const classes = _getAllowedClimateClasses();
+ * if (classes.has('sensor')) {
+ *   // Valid climate device
+ * }
+ */
+function _getAllowedClimateClasses() {
+  const envClasses = Homey.env?.CLIMATE_DEVICE_CLASSES || process.env?.CLIMATE_DEVICE_CLASSES;
+  if (typeof envClasses === 'string' && envClasses.trim().length > 0) {
+    const parsed = envClasses
+      .split(',')
+      .map((c) => c.trim().toLowerCase())
+      .filter(Boolean);
+    if (parsed.length > 0) {
+      return new Set(parsed);
+    }
+  }
+  return new Set(DEFAULT_CLIMATE_CLASSES);
+}
 
 /**
  * Handles `POST /auth/start`.
@@ -495,22 +530,24 @@ async function postGeofenceEvent({ homey, body }) {
  *
  * Retrieves the thermometer classification configuration (indoor, outdoor)
  * and the list of available devices with temperature measurement capabilities,
- * filtering out any devices natively excluded from Homey climate (climate_exclude: true) or marked as hidden.
+ * filtering out any devices natively excluded from Homey climate (climate_exclude: true),
+ * marked as hidden, or whose effective class is not among the allowed climate classes.
  *
  * @public
  * @param {object} args - Request arguments provided by Homey Web API.
  * @param {import('homey').Homey} args.homey - The Homey application instance.
- * @returns {Promise<{config: Object.<string, string>, devices: Array<{id: string, name: string, zone: string}>}>}
+ * @returns {Promise<{config: Object.<string, string>, devices: Array<{id: string, name: string, zone: string}>, allowed_classes: string[]}>}
  * @example
  * // Request:
  * // GET https://{homeyId}.connect.athom.com/api/app/com.dimapp.aaos/thermometers
  * //
  * // Response:
- * // { "config": { "dev-1": "indoor", "dev-2": "outdoor" }, "devices": [...] }
+ * // { "config": { "dev-1": "indoor", "dev-2": "outdoor" }, "devices": [...], "allowed_classes": ["sensor", "thermostat", "heater", "airconditioning"] }
  */
 async function getThermometersConfig({ homey }) {
   homey.app.log('[api:getThermometersConfig] Thermometer configuration requested');
   const config = homey.settings.get('thermometers_config') || {};
+  const allowedClimateClasses = _getAllowedClimateClasses();
 
   let thermometerDevices = [];
   try {
@@ -525,12 +562,22 @@ async function getThermometersConfig({ homey }) {
         const hasTemp = Array.isArray(dev.capabilities) && dev.capabilities.includes('measure_temperature');
         const isClimateExcluded = dev.settings && dev.settings.climate_exclude === true;
         const isHidden = dev.hidden === true;
-        if (hasTemp && !isClimateExcluded && !isHidden) {
+        const effectiveClass = (dev.virtualClass || dev.class || '').toLowerCase();
+        const isClimateClass = allowedClimateClasses.has(effectiveClass);
+
+        if (hasTemp && !isClimateExcluded && !isHidden && isClimateClass) {
           thermometerDevices.push({
             id: dev.id,
             name: dev.name,
             zone: dev.zone
           });
+        } else if (hasTemp && !isClimateClass) {
+          if (typeof homey.app.debugLog === 'function') {
+            homey.app.debugLog(
+              'api:getThermometersConfig',
+              `EXCLUDE '${dev.name}' from thermometers (class='${effectiveClass}' not in climate classes: ${Array.from(allowedClimateClasses).join(', ')})`
+            );
+          }
         }
       }
     }
@@ -538,8 +585,12 @@ async function getThermometersConfig({ homey }) {
     homey.app.error('[api:getThermometersConfig] Failed to fetch thermometer devices:', err.message);
   }
 
-  homey.app.log(`[api:getThermometersConfig] Returning ${Object.keys(config).length} configured entries, ${thermometerDevices.length} available devices.`);
-  return { config, devices: thermometerDevices };
+  homey.app.log(`[api:getThermometersConfig] Returning ${Object.keys(config).length} configured entries, ${thermometerDevices.length} available devices, allowed classes: ${Array.from(allowedClimateClasses).join(', ')}.`);
+  return {
+    config,
+    devices: thermometerDevices,
+    allowed_classes: Array.from(allowedClimateClasses),
+  };
 }
 
 const fs = require('fs');

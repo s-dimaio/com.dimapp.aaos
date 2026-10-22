@@ -50,5 +50,9 @@
   "1.5.3": {
     "en": "Security improvements and hardening.",
     "it": "Miglioramenti della sicurezza e hardening."
+  },
+  "1.5.4": {
+    "en": "Filter out non-climate appliances from room temperature readings.",
+    "it": "Esclusi gli elettrodomestici (come forni smart) dal calcolo della temperatura delle stanze."
   }
 }

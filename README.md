@@ -1,6 +1,6 @@
 # Android Automotive for Homey (Companion App) 🚗🏡
 
-This is the companion application for **Homey for Android Automotive**. It runs on your Homey Pro and acts as a secure OAuth2 relay, flow execution proxy, geofencing bridge, and data provider for the native Android Automotive OS (AAOS) application installed in your vehicle.
+This is the companion application for **Homey for Android Automotive**. It runs on your Homey Pro and acts as a secure OAuth2 relay, geofencing bridge, and data provider for the native Android Automotive OS (AAOS) application installed in your vehicle.
 
 ## 🌟 Overview
 
@@ -13,9 +13,6 @@ The **Android Automotive** companion app bridges the gap between your car's info
   - **Strict Server-Side RBAC & Hub Membership Check**: Authenticates user tokens with Athom Cloud and validates against the local Homey user registry. Only active `owner`, `manager`, and resident `user` accounts are permitted; `guest` and disabled accounts are blocked with HTTP 403 Forbidden.
   - **Rate Limiting & DoS Protection**: In-memory sliding-window rate limiting on public endpoints (`/auth/start` and `/auth/refresh`) and memory pool capping (max 3 concurrent pending sessions) with automatic listener and timer cleanup.
   - **Strict Input Validation**: Enforces exact 64-character hexadecimal format for session identifiers and validates all incoming payloads.
-- **Flow Execution Proxy (Anti-RCE)**:
-  - Securely triggers Standard and Advanced Homey Flows invoked from the car dashboard.
-  - Enforces strict UUID format validation (`UUID_REGEX`) and safe `JSON.stringify` serialization into the local HomeyScript execution proxy to eliminate script injection vulnerabilities.
 - **Proximity Geofence Support & Triggers**:
   - Exposes Homey Pro coordinates (`/location`) for on-device vehicle geofencing.
   - Exposes user-selected barrier devices (`/geofence`) for departure warnings and arrival shortcuts.
@@ -38,12 +35,10 @@ This app provides Flow triggers to automate your home based on your vehicle's mo
 - **Vehicle exited home geofence** (`geofence_exit`): Triggers when your vehicle leaves the home proximity perimeter.
 
 ## 🏗️ Architecture
-
-This app is the "server-side" component of the integration:
 1. **Homey Companion App** (this repository): Installed on your Homey Pro.
 2. **Android Automotive App**: Native Kotlin app installed in the vehicle. [Repository here](https://github.com/s-dimaio/HomeyAutomotive).
 
-The vehicle app communicates with this companion app via a secure bridge for bootstrapping authentication, executing flow triggers, and synchronizing geofence/climate configuration, while querying the Homey Pro REST API directly for real-time device control and telemetry.
+The vehicle app communicates with this companion app via a secure bridge for bootstrapping authentication and synchronizing geofence/climate configuration, while querying the Homey Pro REST API directly for real-time device control, flows, and telemetry.
 
 ## 🚀 Installation & Development
 
@@ -83,7 +78,6 @@ This app exposes endpoints used by the AAOS client:
 - `POST /auth/refresh`: Refreshes and rotates the hub session token with Athom Cloud, re-verifying hub membership permissions (rate-limited to 10 req/5min).
 
 ### Protected Endpoints (Require valid Homey Pro API Bearer Token)
-- `POST /flow/trigger`: Executes a Standard or Advanced Flow via the HomeyScript proxy (strictly validates UUID format).
 - `GET /location`: Retrieves Homey Pro coordinates for in-car geofencing.
 - `GET /geofence`: Retrieves configured proximity barrier device IDs.
 - `POST /geofence/event`: Reports in-vehicle geofence arrival/departure transitions to trigger Homey flow cards.

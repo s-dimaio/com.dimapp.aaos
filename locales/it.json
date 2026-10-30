@@ -56,7 +56,6 @@
       "title": "Dispositivi Tab Home",
       "subtitle": "Seleziona fino a 9 dispositivi. Se non ne selezioni nessuno verranno mostrati i tuoi Dispositivi Preferiti.",
       "notice_info": "Sono supportate solo luci, serrature, garage e campanelli. Se una presa o un relè che controlla una luce non compare, apri le sue impostazioni su Homey e imposta 'Cosa è collegato?' su 'Luce'.",
-      "homeyscript_alert": "Per eseguire i Flow di Homey da Android Automotive, assicurati che l'app ufficiale HomeyScript sia installata su Homey Pro.",
       "search_placeholder": "Cerca dispositivo",
       "max_reached": "Hai raggiunto il limite massimo di 9 dispositivi.",
       "loading": "Caricamento dispositivi...",
@@ -89,8 +88,7 @@
       "login_step4_title": "Caricamento automatico su Android Automotive",
       "login_step4_desc": "Una volta terminato il processo sullo smartphone, l'app in auto completerà l'abbinamento in pochi secondi e caricherà automaticamente i tuoi dispositivi, varchi e preferenze.",
       "requirements_title": "Requisiti e Note Importanti",
-      "platform_alert": "Questa applicazione è sviluppata esclusivamente per Android Automotive OS (il sistema di bordo integrato nell'auto con Google built-in) e non è compatibile con Android Auto (il sistema di mirroring da smartphone).",
-      "flows_desc": "Per poter avviare ed eseguire i tuoi Advanced Flow e Flow Standard dallo schermo dell'auto, è indispensabile che l'app ufficiale HomeyScript sia installata e attiva sul tuo Homey Pro."
+      "platform_alert": "Questa applicazione è sviluppata esclusivamente per Android Automotive OS (il sistema di bordo integrato nell'auto con Google built-in) e non è compatibile con Android Auto (il sistema di mirroring da smartphone)."
     },
     "common": {
       "save": "Salva",

@@ -56,7 +56,6 @@
       "title": "Home Tab Devices",
       "subtitle": "Select up to 9 devices. If none are selected your Favorite devices will be shown.",
       "notice_info": "Only lights, locks, garage doors, and doorbells are supported. If a smart plug or relay controlling a light is missing, open its device settings in Homey and set 'What's plugged in?' to 'Light'.",
-      "homeyscript_alert": "To run Homey Flows from Android Automotive, make sure the official HomeyScript app is installed on your Homey Pro.",
       "search_placeholder": "Search device",
       "max_reached": "You have reached the maximum limit of 9 devices.",
       "loading": "Loading devices...",
@@ -89,8 +88,7 @@
       "login_step4_title": "Automatic loading on Android Automotive",
       "login_step4_desc": "Once finished on your smartphone, the car app will finalize pairing within seconds and automatically load your devices, barriers, and preferences.",
       "requirements_title": "Requirements & Important Notes",
-      "platform_alert": "This application is natively designed for Android Automotive OS (built into the vehicle infotainment with Google built-in) and is not compatible with Android Auto (smartphone projection).",
-      "flows_desc": "To trigger and run your Advanced Flows and Standard Flows from your car display, the official HomeyScript app must be installed and active on your Homey Pro."
+      "platform_alert": "This application is natively designed for Android Automotive OS (built into the vehicle infotainment with Google built-in) and is not compatible with Android Auto (smartphone projection)."
     },
     "common": {
       "save": "Save",

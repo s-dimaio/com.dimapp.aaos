@@ -1,6 +1,6 @@
 {
   "id": "com.dimapp.aaos",
-  "version": "1.5.4",
+  "version": "1.6.0",
   "compatibility": ">=12.0.0",
   "sdk": 3,
   "brandColor": "#3DDC84",
@@ -55,13 +55,10 @@
       "path": "/auth/refresh",
       "public": true
     },
-    "triggerFlow": {
-      "method": "POST",
-      "path": "/flow/trigger"
-    },
     "getDashboards": {
       "method": "GET",
-      "path": "/dashboards"
+      "path": "/dashboards",
+      "public": true
     },
     "getDevices": {
       "method": "GET",
@@ -73,19 +70,23 @@
     },
     "getLocation": {
       "method": "GET",
-      "path": "/location"
+      "path": "/location",
+      "public": true
     },
     "getGeofenceConfig": {
       "method": "GET",
-      "path": "/geofence"
+      "path": "/geofence",
+      "public": true
     },
     "postGeofenceEvent": {
       "method": "POST",
-      "path": "/geofence/event"
+      "path": "/geofence/event",
+      "public": true
     },
     "getThermometersConfig": {
       "method": "GET",
-      "path": "/thermometers"
+      "path": "/thermometers",
+      "public": true
     },
     "getLogStatus": {
       "method": "GET",

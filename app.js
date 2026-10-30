@@ -96,13 +96,6 @@ class HomeyAaosCompanionApp extends Homey.App {
   _rateLimits = new Map();
 
   /**
-   * Cached identifier of the HomeyScript execution proxy script.
-   * @private
-   * @type {string|null}
-   */
-  _homeyScriptProxyId = null;
-
-  /**
    * Internal guard preventing recursive logging during LogManager operations.
    * @private
    * @type {boolean}
@@ -197,24 +190,16 @@ class HomeyAaosCompanionApp extends Homey.App {
     this.log(`[${TAG}:startAuthSession] Creating OAuth2 callback for session ${sessionId.substring(0, 8)}...`);
 
     const clientId = Homey.env.CLIENT_ID;
-    const homeyId = await this.homey.cloud.getHomeyId();
-    const scopes = [
-      'homey.zone.readonly',
-      'homey.device.readonly',
-      'homey.device.control',
-      'homey.flow.readonly',
-      'homey.flow.start',
-      'homey.app.readonly',
-      'homey.user.self',
-    ].join(' ');
 
     // The base authorization URL
-    // createOAuth2Callback requires you to explicitly append the redirect_uri that was configured in the Dev Portal.
+    // createOAuth2Callback requires explicitly appending the redirect_uri configured in the Dev Portal.
+    // By omitting the scope parameter entirely, Athom Cloud automatically grants all client scopes configured
+    // in the Developer Portal, critically including 'account.homeys.readonly' which prompts the user to select
+    // the target Homey and binds 'resource.homey.<id>' to the issued tokens.
     const baseAuthUrl = `https://api.athom.com/oauth2/authorise`
       + `?response_type=code`
       + `&client_id=${encodeURIComponent(clientId)}`
-      + `&redirect_uri=https://callback.athom.com/oauth2/callback/`
-      + `&scope=${encodeURIComponent(scopes)}`;
+      + `&redirect_uri=https://callback.athom.com/oauth2/callback/`;
 
     return new Promise((resolve, reject) => {
       this.homey.cloud.createOAuth2Callback(baseAuthUrl)
@@ -288,6 +273,120 @@ class HomeyAaosCompanionApp extends Homey.App {
   // ── Private Methods ────────────────────────────────────────────────────────
 
   /**
+   * Exchanges an Athom Cloud OAuth2 access token for a bound delegation token
+   * and logs in to the local Homey Pro gateway to obtain a scoped user session token.
+   *
+   * Flow:
+   * 1. Requests a bound delegation token from Athom Cloud:
+   *    `POST https://api.athom.com/delegation/token?audience=homey&homeyId={homeyId}`
+   *    Payload: `{ resource: 'resource.homey.' + homeyId }`
+   * 2. Extracts the signed delegation JWT.
+   * 3. Authenticates with the Homey Pro User Manager gateway:
+   *    `POST {localUrl}/api/manager/users/login` (with connect.athom.com fallback)
+   *    Payload: `{ token: delegationJwt, resource: 'resource.homey.' + homeyId }`
+   * 4. Extracts and returns the established user session token.
+   *
+   * @private
+   * @async
+   * @param {string} accessToken - The Athom Cloud OAuth2 access token (mandatory).
+   * @param {string} homeyId - The unique 24-character hex ID of this Homey Pro hub (mandatory).
+   * @returns {Promise<string>} The scoped user session token.
+   * @throws {Error} If delegation token issuance or gateway login fails.
+   * @example
+   * const userSessionToken = await this._createHomeyUserSession(token.access_token, homeyId);
+   */
+  async _createHomeyUserSession(accessToken, homeyId) {
+    if (!accessToken || typeof accessToken !== 'string') {
+      throw Object.assign(new Error('Missing or invalid accessToken.'), { statusCode: 400 });
+    }
+    if (!homeyId || typeof homeyId !== 'string') {
+      throw Object.assign(new Error('Missing or invalid homeyId.'), { statusCode: 400 });
+    }
+
+    const maskId = id => (typeof id === 'string' && id.length > 8 ? `${id.substring(0, 4)}***${id.slice(-4)}` : '***');
+    const maskedHomeyId = maskId(homeyId);
+
+    this.log(`[${TAG}:_createHomeyUserSession] Requesting bound delegation token for hub '${maskedHomeyId}' from Athom Cloud...`);
+
+    const delegationUrl = `https://api.athom.com/delegation/token?audience=homey&homeyId=${encodeURIComponent(homeyId)}`;
+    const delegationResponse = await fetch(delegationUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ resource: `resource.homey.${homeyId}` }),
+    });
+
+    if (!delegationResponse.ok) {
+      const errorText = await delegationResponse.text().catch(() => '');
+      this.error(`[${TAG}:_createHomeyUserSession] Delegation token request failed with HTTP ${delegationResponse.status}:`, errorText);
+      throw Object.assign(new Error(`Delegation token request failed (HTTP ${delegationResponse.status})`), { statusCode: delegationResponse.status });
+    }
+
+    const delegationData = await delegationResponse.json();
+    const delegationJwt = typeof delegationData === 'string'
+      ? delegationData
+      : (delegationData.token || delegationData.result || delegationData);
+
+    if (!delegationJwt || typeof delegationJwt !== 'string') {
+      this.error(`[${TAG}:_createHomeyUserSession] Unexpected delegation response format.`);
+      throw Object.assign(new Error('Invalid delegation token response from Athom Cloud.'), { statusCode: 502 });
+    }
+
+    this.log(`[${TAG}:_createHomeyUserSession] Bound delegation token received. Logging in to Homey Pro gateway...`);
+
+    const loginPayload = JSON.stringify({
+      token: delegationJwt,
+      resource: `resource.homey.${homeyId}`,
+    });
+
+    let loginResponse = null;
+
+    // 1. Attempt gateway login via internal loopback localUrl
+    try {
+      const localUrl = await this.homey.api.getLocalUrl();
+      loginResponse = await fetch(`${localUrl}/api/manager/users/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: loginPayload,
+      });
+    } catch (localErr) {
+      this.log(`[${TAG}:_createHomeyUserSession] Local loopback gateway login attempt failed (${localErr.message}), falling back to connect URL...`);
+    }
+
+    // 2. If loopback failed or returned error, fallback to cloud-routed connect.athom.com
+    if (!loginResponse || !loginResponse.ok) {
+      const fallbackUrl = `https://${homeyId}.connect.athom.com/api/manager/users/login`;
+      this.log(`[${TAG}:_createHomeyUserSession] Attempting gateway login via connect URL: ${fallbackUrl}`);
+      loginResponse = await fetch(fallbackUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: loginPayload,
+      });
+    }
+
+    if (!loginResponse.ok) {
+      const loginErrorText = await loginResponse.text().catch(() => '');
+      this.error(`[${TAG}:_createHomeyUserSession] Homey gateway login failed with HTTP ${loginResponse.status}:`, loginErrorText);
+      throw Object.assign(new Error(`Homey gateway login failed (HTTP ${loginResponse.status})`), { statusCode: loginResponse.status });
+    }
+
+    const loginData = await loginResponse.json();
+    const userSessionToken = typeof loginData === 'string'
+      ? loginData
+      : (loginData.token || loginData.session_token || loginData);
+
+    if (!userSessionToken || typeof userSessionToken !== 'string') {
+      this.error(`[${TAG}:_createHomeyUserSession] Unexpected login response format.`);
+      throw Object.assign(new Error('Invalid session token response from Homey gateway.'), { statusCode: 502 });
+    }
+
+    this.log(`[${TAG}:_createHomeyUserSession] Scoped user session token successfully established for hub '${maskedHomeyId}'.`);
+    return userSessionToken;
+  }
+
+  /**
    * Exchanges the OAuth2 authorization code for an access + refresh token pair by
    * calling the Athom Cloud token endpoint.
    *
@@ -339,6 +438,11 @@ class HomeyAaosCompanionApp extends Homey.App {
       const homeyApiUrl = `https://${homeyId}.connect.athom.com/api/`;
       let localHomeyName = 'Homey';
 
+      // 2. Establish scoped User Session Token via bound delegation
+      this.log(`[${TAG}:_exchangeCode] Establishing bound user session token for session ${sessionId.substring(0, 8)}...`);
+      const userSessionToken = await this._createHomeyUserSession(token.access_token, homeyId);
+      this.log(`[${TAG}:_exchangeCode] Bound user session token successfully created for session ${sessionId.substring(0, 8)}...`);
+
       const ownerSessionToken = await this.homey.api.getOwnerApiToken();
 
       // Retrieve the hub's user-defined system name via the REST API using the Owner token.
@@ -388,7 +492,7 @@ class HomeyAaosCompanionApp extends Homey.App {
 
       session.status = 'complete';
       session.token = {
-        session_token: ownerSessionToken,
+        session_token: userSessionToken,
         homey_id: homeyId,
         homey_name: localHomeyName,
         homey_api_url: homeyApiUrl,
@@ -632,10 +736,24 @@ class HomeyAaosCompanionApp extends Homey.App {
       await this._verifyHubMembership(newAthomTokens.access_token);
       this.log(`[${TAG}:refreshAuthSession] Hub membership check passed for token refresh.`);
 
-      const ownerSessionToken = await this.homey.api.getOwnerApiToken();
+      const homeyId = await this.homey.cloud.getHomeyId();
+      this.log(`[${TAG}:refreshAuthSession] Establishing renewed bound user session token...`);
+
+      let userSessionToken;
+      try {
+        userSessionToken = await this._createHomeyUserSession(newAthomTokens.access_token, homeyId);
+        this.log(`[${TAG}:refreshAuthSession] Renewed bound user session token created successfully.`);
+      } catch (delegationErr) {
+        this.error(`[${TAG}:refreshAuthSession] Bound delegation failed during token refresh (${delegationErr.message}). Re-authentication required.`);
+        const err = new Error('Companion app security has been updated. Please re-authenticate.');
+        err.statusCode = 401;
+        err.code = 'REAUTH_REQUIRED';
+        err.reason = 'COMPANION_UPDATED';
+        throw err;
+      }
 
       return {
-        session_token: ownerSessionToken,
+        session_token: userSessionToken,
         athom_refresh_token: newAthomTokens.refresh_token,
       };
     } catch (err) {
@@ -644,172 +762,6 @@ class HomeyAaosCompanionApp extends Homey.App {
       throw Object.assign(new Error('Internal error during token refresh.'), { statusCode: 500 });
     }
   }
-
-  /**
-   * Ensures a HomeyScript proxy script exists on the local Homey Pro hub and returns its ID.
-   *
-   * Queries the official Athom HomeyScript app (`com.athom.homeyscript`).
-   * If the app is missing (HTTP 404), throws an error with `code: 'HOMEYSCRIPT_NOT_INSTALLED'`.
-   * If the dedicated `AAOS-FlowTrigger` script is missing, creates it automatically.
-   *
-   * @private
-   * @returns {Promise<{scriptId: string}>} The script identifier to execute.
-   * @throws {Error} If HomeyScript is not installed or script proxy creation fails.
-   */
-  async _ensureHomeyScriptProxy() {
-    if (this._homeyScriptProxyId) {
-      return { scriptId: this._homeyScriptProxyId };
-    }
-
-    const localUrl = await this.homey.api.getLocalUrl();
-    const ownerToken = await this.homey.api.getOwnerApiToken();
-
-    try {
-      const response = await fetch(`${localUrl}/api/app/com.athom.homeyscript/script`, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${ownerToken}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          const err = new Error('HomeyScript app is not installed on Homey Pro.');
-          err.code = 'HOMEYSCRIPT_NOT_INSTALLED';
-          err.statusCode = 404;
-          throw err;
-        }
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const scripts = await response.json();
-      const existing = Object.values(scripts).find(s => s && s.name === 'AAOS-FlowTrigger');
-      if (existing) {
-        this._homeyScriptProxyId = existing.id;
-        this.log(`[${TAG}:_ensureHomeyScriptProxy] Found existing HomeyScript proxy script: ${this._homeyScriptProxyId}`);
-        return { scriptId: this._homeyScriptProxyId };
-      }
-    } catch (err) {
-      if (err.code === 'HOMEYSCRIPT_NOT_INSTALLED') throw err;
-      this.log(`[${TAG}:_ensureHomeyScriptProxy] Could not list existing scripts, will attempt creation: ${err.message}`);
-    }
-
-    try {
-      const createResponse = await fetch(`${localUrl}/api/app/com.athom.homeyscript/script`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${ownerToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: 'AAOS-FlowTrigger',
-          code: '// Flow trigger proxy for AAOS Companion App\n// Managed by com.dimapp.aaos\n',
-        }),
-      });
-
-      if (!createResponse.ok) {
-        if (createResponse.status === 404) {
-          const err = new Error('HomeyScript app is not installed on Homey Pro.');
-          err.code = 'HOMEYSCRIPT_NOT_INSTALLED';
-          err.statusCode = 404;
-          throw err;
-        }
-        throw new Error(`HTTP ${createResponse.status}: ${createResponse.statusText}`);
-      }
-
-      const newScript = await createResponse.json();
-      this._homeyScriptProxyId = newScript.id;
-      this.log(`[${TAG}:_ensureHomeyScriptProxy] Created HomeyScript proxy script: ${this._homeyScriptProxyId}`);
-      return { scriptId: this._homeyScriptProxyId };
-    } catch (err) {
-      if (err.code === 'HOMEYSCRIPT_NOT_INSTALLED') throw err;
-      throw new Error(`Failed to create HomeyScript proxy script: ${err.message}`);
-    }
-  }
-
-  /**
-   * Executes arbitrary JavaScript snippet inside the privileged HomeyScript runtime.
-   *
-   * @private
-   * @param {string} code - The JavaScript snippet to run inside HomeyScript.
-   * @returns {Promise<any>} The return value from HomeyScript execution.
-   * @throws {Error} If HomeyScript is not installed or script execution fails.
-   */
-  async _executeHomeyScript(code) {
-    const { scriptId } = await this._ensureHomeyScriptProxy();
-    const localUrl = await this.homey.api.getLocalUrl();
-    const ownerToken = await this.homey.api.getOwnerApiToken();
-
-    const response = await fetch(`${localUrl}/api/app/com.athom.homeyscript/script/${scriptId}/run`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${ownerToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ code }),
-    });
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        const err = new Error('HomeyScript app is not installed on Homey Pro.');
-        err.code = 'HOMEYSCRIPT_NOT_INSTALLED';
-        err.statusCode = 404;
-        throw err;
-      }
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const result = await response.json();
-    if (!result.success) {
-      const errorMsg = result.returns?.message || result.error || 'HomeyScript execution failed';
-      throw new Error(errorMsg);
-    }
-    return result.returns;
-  }
-
-  /**
-   * Triggers a standard or advanced Homey flow via the privileged HomeyScript proxy.
-   *
-   * Validates that flowId is a valid UUID format, enforces boolean isAdvanced parameter,
-   * serializes arguments safely via JSON.stringify, and avoids any string interpolation
-   * vulnerabilities inside HomeyScript code generation.
-   *
-   * @public
-   * @param {string} flowId - The UUID of the target Flow.
-   * @param {boolean} [isAdvanced=false] - Whether the target flow is an Advanced Flow.
-   * @param {object} [args={}] - Optional arguments to pass to the flow.
-   * @returns {Promise<{success: boolean, message: string}>} Result of the operation.
-   * @throws {Error} If the flow UUID is invalid or execution fails.
-   * @example
-   * await homey.app.triggerFlow('123e4567-e89b-12d3-a456-426614174000', true);
-   */
-  async triggerFlow(flowId, isAdvanced = false, args = {}) {
-    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const trimmedId = typeof flowId === 'string' ? flowId.trim() : '';
-
-    if (!trimmedId || !UUID_REGEX.test(trimmedId)) {
-      this.error(`[${TAG}:triggerFlow] Security rejection: Invalid flowId '${trimmedId}'. Standard UUID format required.`);
-      throw Object.assign(new Error('Missing or invalid flowId parameter. Must be a valid UUID.'), { statusCode: 400 });
-    }
-
-    const safeIsAdvanced = isAdvanced === true;
-    const method = safeIsAdvanced ? 'triggerAdvancedFlow' : 'triggerFlow';
-
-    // Safely encode parameters using JSON.stringify to completely prevent script injection
-    const safeId = JSON.stringify(trimmedId);
-    const safeArgs = args && typeof args === 'object' && !Array.isArray(args) ? JSON.stringify(args) : 'null';
-    const code = `await Homey.flow.${method}({ id: ${safeId} }, ${safeArgs});`;
-
-    this.log(`[${TAG}:triggerFlow] Security validation passed for flow '${trimmedId}'. Executing method '${method}' via HomeyScript proxy...`);
-    await this._executeHomeyScript(code);
-    this.log(`[${TAG}:triggerFlow] Flow '${trimmedId}' triggered successfully.`);
-
-    return { success: true, message: 'Flow triggered successfully.' };
-  }
-
-
-
 
   /**
    * Checks whether debug logging is currently enabled in settings.

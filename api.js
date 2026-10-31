@@ -756,7 +756,6 @@ module.exports = {
   startAuth,
   pollAuth,
   refreshAuth,
-  triggerFlow,
   getDashboards,
   getDevices,
   getZones,

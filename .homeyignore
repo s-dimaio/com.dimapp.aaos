@@ -10,6 +10,7 @@ node_modules/
 /.homeybuild/
 
 /.agent
+/.agents
 /img
 /log
 release.ps1

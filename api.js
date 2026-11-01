@@ -231,6 +231,13 @@ async function getDevices({ homey }) {
   const devices = await response.json();
   const totalCount = Object.keys(devices).length;
 
+  // Clean up any deleted devices from stored settings while we have the full device registry
+  try {
+    await homey.app.cleanupDeletedDevices(devices);
+  } catch (cleanErr) {
+    homey.app.error('[api:getDevices] Failed to run device cleanup:', cleanErr.message || cleanErr);
+  }
+
   // Find IDs of devices that are part of a group
   const excludedIds = new Set();
   for (const device of Object.values(devices)) {
@@ -513,11 +520,17 @@ async function postGeofenceEvent(args) {
  * // Response:
  * // { "config": { "dev-1": "indoor", "dev-2": "outdoor" }, "devices": [...], "allowed_classes": ["sensor", "thermostat", "heater", "airconditioning"] }
  */
-async function getThermometersConfig(args) {
-  const { homey } = args;
-  await homey.app.requireValidSessionToken(args);
-  homey.app.log('[api:getThermometersConfig] Thermometer configuration requested');
-  const config = homey.settings.get('thermometers_config') || {};
+/**
+ * Shared helper to fetch available climate devices and user thermometer configuration.
+ *
+ * @private
+ * @async
+ * @param {import('homey').Homey} homey - The Homey application instance.
+ * @returns {Promise<{config: Object.<string, string>, devices: Array<{id: string, name: string, zone: string}>, allowed_classes: string[]}>}
+ * @example
+ * const data = await _fetchThermometersData(homey);
+ */
+async function _fetchThermometersData(homey) {
   const allowedClimateClasses = _getAllowedClimateClasses();
 
   let thermometerDevices = [];
@@ -529,6 +542,11 @@ async function getThermometersConfig(args) {
     });
     if (res.ok) {
       const allDevs = await res.json();
+      try {
+        await homey.app.cleanupDeletedDevices(allDevs);
+      } catch (cleanErr) {
+        homey.app.error('[api:_fetchThermometersData] Failed to run device cleanup:', cleanErr.message || cleanErr);
+      }
       for (const dev of Object.values(allDevs)) {
         const hasTemp = Array.isArray(dev.capabilities) && dev.capabilities.includes('measure_temperature');
         const isClimateExcluded = dev.settings && dev.settings.climate_exclude === true;
@@ -545,7 +563,7 @@ async function getThermometersConfig(args) {
         } else if (hasTemp && !isClimateClass) {
           if (typeof homey.app.debugLog === 'function') {
             homey.app.debugLog(
-              'api:getThermometersConfig',
+              'api:_fetchThermometersData',
               `EXCLUDE '${dev.name}' from thermometers (class='${effectiveClass}' not in climate classes: ${Array.from(allowedClimateClasses).join(', ')})`
             );
           }
@@ -553,15 +571,57 @@ async function getThermometersConfig(args) {
       }
     }
   } catch (err) {
-    homey.app.error('[api:getThermometersConfig] Failed to fetch thermometer devices:', err.message);
+    homey.app.error('[api:_fetchThermometersData] Failed to fetch thermometer devices:', err.message);
   }
 
-  homey.app.log(`[api:getThermometersConfig] Returning ${Object.keys(config).length} configured entries, ${thermometerDevices.length} available devices, allowed classes: ${Array.from(allowedClimateClasses).join(', ')}.`);
+  const config = homey.settings.get('thermometers_config') || {};
+  homey.app.log(`[api:_fetchThermometersData] Returning ${Object.keys(config).length} configured entries, ${thermometerDevices.length} available devices, allowed classes: ${Array.from(allowedClimateClasses).join(', ')}.`);
   return {
     config,
     devices: thermometerDevices,
     allowed_classes: Array.from(allowedClimateClasses),
   };
+}
+
+/**
+ * Handles `GET /thermometers`.
+ *
+ * Enforces session token authorization and retrieves the thermometer classification configuration
+ * (indoor, outdoor) and available temperature measurement devices for the external AAOS vehicle client.
+ *
+ * @public
+ * @async
+ * @param {object} args - Request arguments provided by Homey Web API.
+ * @param {import('homey').Homey} args.homey - The Homey application instance.
+ * @returns {Promise<{config: Object.<string, string>, devices: Array<{id: string, name: string, zone: string}>, allowed_classes: string[]}>}
+ * @throws {Error} If the request is unauthenticated or unauthorized (HTTP 401).
+ * @example
+ * // GET /api/app/com.dimapp.aaos/thermometers?token=<sessionToken>
+ */
+async function getThermometersConfig(args) {
+  const { homey } = args;
+  await homey.app.requireValidSessionToken(args);
+  homey.app.log('[api:getThermometersConfig] External thermometer configuration requested');
+  return _fetchThermometersData(homey);
+}
+
+/**
+ * Handles `GET /settings/thermometers`.
+ *
+ * Internal endpoint called by the Homey companion app settings view.
+ * Natively protected by Athom Homey gateway session authentication (no external bearer token required).
+ *
+ * @public
+ * @async
+ * @param {object} args - Request arguments provided by Homey Web API.
+ * @param {import('homey').Homey} args.homey - The Homey application instance.
+ * @returns {Promise<{config: Object.<string, string>, devices: Array<{id: string, name: string, zone: string}>, allowed_classes: string[]}>}
+ * @example
+ * // Homey.api('GET', '/settings/thermometers', null, callback);
+ */
+async function getSettingsThermometers({ homey }) {
+  homey.app.log('[api:getSettingsThermometers] Settings thermometer configuration requested');
+  return _fetchThermometersData(homey);
 }
 
 const fs = require('fs');
@@ -794,6 +854,7 @@ module.exports = {
   getGeofenceConfig,
   postGeofenceEvent,
   getThermometersConfig,
+  getSettingsThermometers,
   getLogStatus,
   getLogDownloadFile,
   deleteLogFile,

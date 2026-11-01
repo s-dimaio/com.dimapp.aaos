@@ -124,6 +124,13 @@ class HomeyAaosCompanionApp extends Homey.App {
 
     this.log(`[${TAG}:onInit] Homey AAOS Companion App v${this.manifest.version} initialized.`);
 
+    // Purge any deleted devices from stored settings at startup
+    try {
+      await this.cleanupDeletedDevices();
+    } catch (err) {
+      this.error(`[${TAG}:onInit] Failed to run initial device cleanup:`, err.message || err);
+    }
+
     const homeDevices = this.homey.settings.get('home_devices_ids') || [];
     const geofenceDevices = this.homey.settings.get('geofence_device_ids') || [];
     const thermometersConfig = this.homey.settings.get('thermometers_config') || {};
@@ -391,6 +398,89 @@ class HomeyAaosCompanionApp extends Homey.App {
     if (!isValid) {
       this.error(`[${TAG}:requireValidSessionToken] Security rejection: Invalid or unauthorized token.`);
       throw Object.assign(new Error('Unauthorized: Invalid or expired session token.'), { statusCode: 401 });
+    }
+  }
+
+  /**
+   * Purges orphaned or deleted device identifiers from app settings (dashboard, geofence barriers, thermometers).
+   *
+   * Verifies stored device IDs in `home_devices_ids`, `geofence_device_ids`, and `thermometers_config`
+   * against the list of devices currently registered in Homey Pro. Any identifier referring to a removed device
+   * is automatically pruned from settings.
+   *
+   * @public
+   * @async
+   * @param {object|null} [devicesMap=null] - Optional pre-fetched map of devices from Homey REST API. If omitted, fetched locally.
+   * @returns {Promise<{cleanedHomeCount: number, cleanedGeofenceCount: number, cleanedThermometersCount: number}>} Summary of pruned devices.
+   * @example
+   * await homey.app.cleanupDeletedDevices();
+   */
+  async cleanupDeletedDevices(devicesMap = null) {
+    try {
+      let devices = devicesMap;
+      if (!devices || typeof devices !== 'object') {
+        const localUrl = await this.homey.api.getLocalUrl();
+        const token = await this.homey.api.getOwnerApiToken();
+        const response = await fetch(`${localUrl}/api/manager/devices/device`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) {
+          this.error(`[${TAG}:cleanupDeletedDevices] Failed to fetch devices for cleanup. HTTP ${response.status}`);
+          return { cleanedHomeCount: 0, cleanedGeofenceCount: 0, cleanedThermometersCount: 0 };
+        }
+        devices = await response.json();
+      }
+
+      const validDeviceIds = new Set(Object.keys(devices || {}));
+
+      // 1. Sanitize home_devices_ids (Dashboard)
+      const currentHomeIds = this.homey.settings.get('home_devices_ids') || [];
+      let cleanedHomeCount = 0;
+      if (Array.isArray(currentHomeIds) && currentHomeIds.length > 0) {
+        const cleanedHomeIds = currentHomeIds.filter(id => validDeviceIds.has(id));
+        if (cleanedHomeIds.length !== currentHomeIds.length) {
+          cleanedHomeCount = currentHomeIds.length - cleanedHomeIds.length;
+          this.homey.settings.set('home_devices_ids', cleanedHomeIds);
+          this.log(`[${TAG}:cleanupDeletedDevices] Purged ${cleanedHomeCount} deleted device(s) from 'home_devices_ids' (remaining: ${cleanedHomeIds.length}).`);
+        }
+      }
+
+      // 2. Sanitize geofence_device_ids (Barriers / Proximity Alerts)
+      const currentGeofenceIds = this.homey.settings.get('geofence_device_ids') || [];
+      let cleanedGeofenceCount = 0;
+      if (Array.isArray(currentGeofenceIds) && currentGeofenceIds.length > 0) {
+        const cleanedGeofenceIds = currentGeofenceIds.filter(id => validDeviceIds.has(id));
+        if (cleanedGeofenceIds.length !== currentGeofenceIds.length) {
+          cleanedGeofenceCount = currentGeofenceIds.length - cleanedGeofenceIds.length;
+          this.homey.settings.set('geofence_device_ids', cleanedGeofenceIds);
+          this.log(`[${TAG}:cleanupDeletedDevices] Purged ${cleanedGeofenceCount} deleted device(s) from 'geofence_device_ids' (remaining: ${cleanedGeofenceIds.length}).`);
+        }
+      }
+
+      // 3. Sanitize thermometers_config (Climate)
+      const currentThermometers = this.homey.settings.get('thermometers_config') || {};
+      let cleanedThermometersCount = 0;
+      if (currentThermometers && typeof currentThermometers === 'object') {
+        const cleanedThermometers = {};
+        let modified = false;
+        for (const [id, mode] of Object.entries(currentThermometers)) {
+          if (validDeviceIds.has(id)) {
+            cleanedThermometers[id] = mode;
+          } else {
+            modified = true;
+            cleanedThermometersCount++;
+          }
+        }
+        if (modified) {
+          this.homey.settings.set('thermometers_config', cleanedThermometers);
+          this.log(`[${TAG}:cleanupDeletedDevices] Purged ${cleanedThermometersCount} deleted device(s) from 'thermometers_config' (remaining: ${Object.keys(cleanedThermometers).length}).`);
+        }
+      }
+
+      return { cleanedHomeCount, cleanedGeofenceCount, cleanedThermometersCount };
+    } catch (err) {
+      this.error(`[${TAG}:cleanupDeletedDevices] Error during device cleanup:`, err.message || err);
+      return { cleanedHomeCount: 0, cleanedGeofenceCount: 0, cleanedThermometersCount: 0 };
     }
   }
 

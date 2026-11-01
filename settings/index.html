@@ -1230,11 +1230,75 @@
         deviceList.innerHTML = '<p style="text-align:center; padding:20px; color:#999">' + Homey.__('settings.home_config.loading') + '</p>';
         _fetchBaseData(() => {
           Homey.get('home_devices_ids', (err, val) => {
-            selectedHomeDeviceIds = Array.isArray(val) ? val : [];
+            const rawIds = Array.isArray(val) ? val : [];
+            const validIds = new Set(allDevices.map(d => d.id));
+            selectedHomeDeviceIds = rawIds.filter(id => validIds.has(id));
+            if (selectedHomeDeviceIds.length !== rawIds.length) {
+              Homey.set('home_devices_ids', selectedHomeDeviceIds);
+            }
             _renderHomeDeviceList(deviceSearchInput.value);
             _updateHomeCounter();
           });
         });
+      }
+
+      /**
+       * Computes the flattened hierarchical display order index for all zones based on Homey's zone hierarchy
+       * and user-configured sortIndex, matching the ordering in the official Homey mobile app.
+       *
+       * @private
+       * @param {Object.<string, object>} zones - Map of zoneId to Zone object.
+       * @returns {Object.<string, number>} Map of zoneId to sequential integer order.
+       * @example
+       * const zoneOrder = _computeGlobalZoneOrder(allZones);
+       */
+      function _computeGlobalZoneOrder(zones) {
+        if (!zones || typeof zones !== 'object') return {};
+
+        const childrenMap = {};
+        const allZoneIds = new Set(Object.keys(zones));
+
+        Object.values(zones).forEach(zone => {
+          const parentId = (zone.parent && allZoneIds.has(zone.parent)) ? zone.parent : null;
+          if (!childrenMap[parentId]) {
+            childrenMap[parentId] = [];
+          }
+          childrenMap[parentId].push(zone);
+        });
+
+        // Sort children within each parent by sortIndex (or order), then alphabetically by name
+        Object.values(childrenMap).forEach(list => {
+          list.sort((a, b) => {
+            const indexA = (typeof a.sortIndex === 'number') ? a.sortIndex : ((typeof a.order === 'number') ? a.order : 999999);
+            const indexB = (typeof b.sortIndex === 'number') ? b.sortIndex : ((typeof b.order === 'number') ? b.order : 999999);
+            if (indexA !== indexB) {
+              return indexA - indexB;
+            }
+            return (a.name || '').localeCompare(b.name || '');
+          });
+        });
+
+        const flattenedOrder = {};
+        let currentIndex = 0;
+
+        function dfs(parentId) {
+          const children = childrenMap[parentId];
+          if (!children || children.length === 0) return;
+          for (const child of children) {
+            flattenedOrder[child.id] = currentIndex++;
+            dfs(child.id);
+          }
+        }
+
+        dfs(null);
+
+        Object.keys(zones).forEach(zId => {
+          if (flattenedOrder[zId] === undefined) {
+            flattenedOrder[zId] = currentIndex++;
+          }
+        });
+
+        return flattenedOrder;
       }
 
       /**
@@ -1249,25 +1313,44 @@
 
         const grouped = {};
         allDevices.forEach(d => {
-          const zoneName = allZones[d.zone]?.name || 'Home';
+          const zoneObj = allZones[d.zone];
+          const zoneName = zoneObj?.name || 'Home';
+          const zoneId = d.zone || '__default__';
+
           if (d.name.toLowerCase().includes(search) || zoneName.toLowerCase().includes(search)) {
-            if (!grouped[zoneName]) grouped[zoneName] = [];
-            grouped[zoneName].push(d);
+            if (!grouped[zoneId]) {
+              grouped[zoneId] = {
+                id: zoneId,
+                name: zoneName,
+                devices: []
+              };
+            }
+            grouped[zoneId].devices.push(d);
           }
         });
 
-        const sortedZones = Object.keys(grouped).sort();
-        if (sortedZones.length === 0) {
+        const zoneOrder = _computeGlobalZoneOrder(allZones);
+        const sortedGroups = Object.values(grouped).sort((a, b) => {
+          const orderA = zoneOrder[a.id] !== undefined ? zoneOrder[a.id] : 999999;
+          const orderB = zoneOrder[b.id] !== undefined ? zoneOrder[b.id] : 999999;
+          if (orderA !== orderB) return orderA - orderB;
+          return a.name.localeCompare(b.name);
+        });
+
+        if (sortedGroups.length === 0) {
           deviceList.innerHTML = '<p style="text-align:center; padding:20px; color:#999">' + Homey.__('settings.home_config.no_devices') + '</p>';
           return;
         }
 
-        sortedZones.forEach(zoneName => {
+        sortedGroups.forEach(group => {
           const zoneDiv = document.createElement('div');
           zoneDiv.className = 'zone-group';
-          zoneDiv.innerHTML = '<div class="zone-title">' + zoneName + '</div>';
+          zoneDiv.innerHTML = '<div class="zone-title">' + group.name + '</div>';
 
-          grouped[zoneName].forEach(device => {
+          // Sort devices inside zone alphabetically by name
+          group.devices.sort((a, b) => a.name.localeCompare(b.name));
+
+          group.devices.forEach(device => {
             const item = document.createElement('div');
             item.className = 'device-item';
 
@@ -1345,7 +1428,12 @@
         geofenceList.innerHTML = '<p style="text-align:center; padding:20px; color:#999">' + Homey.__('settings.geofence.loading') + '</p>';
         _fetchBaseData(() => {
           Homey.get('geofence_device_ids', (err, val) => {
-            selectedGeofenceBarrierIds = Array.isArray(val) ? val : [];
+            const rawIds = Array.isArray(val) ? val : [];
+            const validIds = new Set(allDevices.map(d => d.id));
+            selectedGeofenceBarrierIds = rawIds.filter(id => validIds.has(id));
+            if (selectedGeofenceBarrierIds.length !== rawIds.length) {
+              Homey.set('geofence_device_ids', selectedGeofenceBarrierIds);
+            }
             _renderGeofenceList(geofenceSearchInput.value);
             _updateGeofenceCounter();
           });
@@ -1370,25 +1458,44 @@
 
         const grouped = {};
         barrierDevices.forEach(d => {
-          const zoneName = allZones[d.zone]?.name || 'Home';
+          const zoneObj = allZones[d.zone];
+          const zoneName = zoneObj?.name || 'Home';
+          const zoneId = d.zone || '__default__';
+
           if (d.name.toLowerCase().includes(search) || zoneName.toLowerCase().includes(search)) {
-            if (!grouped[zoneName]) grouped[zoneName] = [];
-            grouped[zoneName].push(d);
+            if (!grouped[zoneId]) {
+              grouped[zoneId] = {
+                id: zoneId,
+                name: zoneName,
+                devices: []
+              };
+            }
+            grouped[zoneId].devices.push(d);
           }
         });
 
-        const sortedZones = Object.keys(grouped).sort();
-        if (sortedZones.length === 0) {
+        const zoneOrder = _computeGlobalZoneOrder(allZones);
+        const sortedGroups = Object.values(grouped).sort((a, b) => {
+          const orderA = zoneOrder[a.id] !== undefined ? zoneOrder[a.id] : 999999;
+          const orderB = zoneOrder[b.id] !== undefined ? zoneOrder[b.id] : 999999;
+          if (orderA !== orderB) return orderA - orderB;
+          return a.name.localeCompare(b.name);
+        });
+
+        if (sortedGroups.length === 0) {
           geofenceList.innerHTML = '<p style="text-align:center; padding:20px; color:#999">' + Homey.__('settings.geofence.no_barriers') + '</p>';
           return;
         }
 
-        sortedZones.forEach(zoneName => {
+        sortedGroups.forEach(group => {
           const zoneDiv = document.createElement('div');
           zoneDiv.className = 'zone-group';
-          zoneDiv.innerHTML = '<div class="zone-title">' + zoneName + '</div>';
+          zoneDiv.innerHTML = '<div class="zone-title">' + group.name + '</div>';
 
-          grouped[zoneName].forEach(device => {
+          // Sort devices inside zone alphabetically by name
+          group.devices.sort((a, b) => a.name.localeCompare(b.name));
+
+          group.devices.forEach(device => {
             const card = document.createElement('div');
             card.className = 'barrier-card';
 
@@ -1397,7 +1504,7 @@
             card.innerHTML = `
               <div class="barrier-info">
                 <span class="barrier-name">${device.name}</span>
-                <span class="barrier-desc">${zoneName} • ${device.class}</span>
+                <span class="barrier-desc">${group.name} • ${device.class}</span>
               </div>
               <label class="toggle-switch">
                 <input type="checkbox" id="geo_chk_${device.id}" ${isChecked ? 'checked' : ''}>
@@ -1482,14 +1589,29 @@
       function _loadClimateData() {
         climateList.innerHTML = '<p style="text-align:center; padding:20px; color:#999">' + Homey.__('settings.climate.loading') + '</p>';
         _fetchBaseData(() => {
-          Homey.api('GET', '/thermometers', null, (err, res) => {
+          Homey.api('GET', '/settings/thermometers', null, (err, res) => {
             if (err) {
               console.error('[Settings] Failed to load thermometers', err);
               _showToast(Homey.__('settings.common.error_generic'), 'error');
               return;
             }
-            climateConfig = (res && res.config && typeof res.config === 'object') ? res.config : {};
+            const rawConfig = (res && res.config && typeof res.config === 'object') ? res.config : {};
             climateDevices = (res && Array.isArray(res.devices)) ? res.devices : [];
+
+            const validIds = new Set(climateDevices.map(d => d.id));
+            const cleanedConfig = {};
+            let hasOrphans = false;
+            for (const [id, mode] of Object.entries(rawConfig)) {
+              if (validIds.has(id)) {
+                cleanedConfig[id] = mode;
+              } else {
+                hasOrphans = true;
+              }
+            }
+            climateConfig = cleanedConfig;
+            if (hasOrphans) {
+              Homey.set('thermometers_config', climateConfig);
+            }
             _renderClimateList(climateSearchInput.value);
           });
         });
@@ -1510,25 +1632,44 @@
 
         const grouped = {};
         climateDevices.forEach(d => {
-          const zoneName = allZones[d.zone]?.name || 'Home';
+          const zoneObj = allZones[d.zone];
+          const zoneName = zoneObj?.name || 'Home';
+          const zoneId = d.zone || '__default__';
+
           if (d.name.toLowerCase().includes(search) || zoneName.toLowerCase().includes(search)) {
-            if (!grouped[zoneName]) grouped[zoneName] = [];
-            grouped[zoneName].push(d);
+            if (!grouped[zoneId]) {
+              grouped[zoneId] = {
+                id: zoneId,
+                name: zoneName,
+                devices: []
+              };
+            }
+            grouped[zoneId].devices.push(d);
           }
         });
 
-        const sortedZones = Object.keys(grouped).sort();
-        if (sortedZones.length === 0) {
+        const zoneOrder = _computeGlobalZoneOrder(allZones);
+        const sortedGroups = Object.values(grouped).sort((a, b) => {
+          const orderA = zoneOrder[a.id] !== undefined ? zoneOrder[a.id] : 999999;
+          const orderB = zoneOrder[b.id] !== undefined ? zoneOrder[b.id] : 999999;
+          if (orderA !== orderB) return orderA - orderB;
+          return a.name.localeCompare(b.name);
+        });
+
+        if (sortedGroups.length === 0) {
           climateList.innerHTML = '<p style="text-align:center; padding:20px; color:#999">' + Homey.__('settings.climate.no_thermometers') + '</p>';
           return;
         }
 
-        sortedZones.forEach(zoneName => {
+        sortedGroups.forEach(group => {
           const zoneDiv = document.createElement('div');
           zoneDiv.className = 'zone-group';
-          zoneDiv.innerHTML = '<div class="zone-title">' + zoneName + '</div>';
+          zoneDiv.innerHTML = '<div class="zone-title">' + group.name + '</div>';
 
-          grouped[zoneName].forEach(device => {
+          // Sort devices inside zone alphabetically by name
+          group.devices.sort((a, b) => a.name.localeCompare(b.name));
+
+          group.devices.forEach(device => {
             const item = document.createElement('div');
             item.className = 'climate-item';
 
@@ -1538,7 +1679,7 @@
             item.innerHTML = `
               <div class="barrier-info" style="flex: 1; min-width: 0;">
                 <span class="barrier-name">${device.name}</span>
-                <span class="barrier-desc">${zoneName}</span>
+                <span class="barrier-desc">${group.name}</span>
               </div>
               <div class="climate-selector" data-device-id="${device.id}">
                 <div class="climate-opt indoor ${currentMode === 'indoor' ? 'active' : ''}" data-mode="indoor">${Homey.__('settings.climate.mode_indoor')}</div>

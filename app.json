@@ -18,7 +18,7 @@
   },
   "author": {
     "name": "Simone Di Maio",
-    "email": "simone.dimaio77@gmail.com"
+    "email": "simone.dimaio.it@gmail.com"
   },
   "category": [
     "tools"
@@ -88,6 +88,10 @@
       "method": "GET",
       "path": "/thermometers",
       "public": true
+    },
+    "getSettingsThermometers": {
+      "method": "GET",
+      "path": "/settings/thermometers"
     },
     "getLogStatus": {
       "method": "GET",

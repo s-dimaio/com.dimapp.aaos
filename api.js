@@ -153,7 +153,24 @@ async function refreshAuth({ homey, body }) {
   return homey.app.refreshAuthSession(athomRefreshToken.trim());
 }
 
-async function getDashboards({ homey }) {
+/**
+ * Handles `GET /dashboards`.
+ *
+ * Enforces session token authorization and returns a virtual dashboard containing
+ * the user-selected home devices.
+ *
+ * @public
+ * @async
+ * @param {object} args - Request arguments provided by Homey Web API.
+ * @param {import('homey').Homey} args.homey - The Homey application instance.
+ * @returns {Promise<object>} The virtual dashboard object.
+ * @throws {Error} If the request is unauthenticated or unauthorized (HTTP 401).
+ * @example
+ * // GET /api/app/com.dimapp.aaos/dashboards?token=<sessionToken>
+ */
+async function getDashboards(args) {
+  const { homey } = args;
+  await homey.app.requireValidSessionToken(args);
   homey.app.log('[api:getDashboards] Request received');
   
   const selectedIds = homey.settings.get('home_devices_ids') || [];
@@ -357,22 +374,25 @@ async function getZones({ homey }) {
 /**
  * Handles `GET /location`.
  *
- * Retrieves the geographical coordinates of the Homey Pro hub configured in the
- * Homey location settings. Used by the AAOS app to establish geofencing perimeters.
+ * Enforces session token authorization and retrieves the geographical coordinates of the
+ * Homey Pro hub configured in the Homey location settings. Used by the AAOS app to establish geofencing perimeters.
  *
  * @public
+ * @async
  * @param {object} args - Request arguments provided by Homey Web API.
  * @param {import('homey').Homey} args.homey - The Homey application instance.
  * @returns {Promise<{latitude: number, longitude: number}>} The geographic coordinates of the hub.
- * @throws {Error} If geolocation is not configured or cannot be retrieved from Homey.
+ * @throws {Error} If the request is unauthorized (HTTP 401) or geolocation is not configured (HTTP 404).
  * @example
  * // Request:
- * // GET https://{homeyId}.connect.athom.com/api/app/com.dimapp.aaos/location
+ * // GET https://{homeyId}.connect.athom.com/api/app/com.dimapp.aaos/location?token=<sessionToken>
  * //
  * // Response:
  * // { "latitude": 52.0907, "longitude": 5.1214 }
  */
-async function getLocation({ homey }) {
+async function getLocation(args) {
+  const { homey } = args;
+  await homey.app.requireValidSessionToken(args);
   homey.app.log('[api:getLocation] Location request received');
   try {
     const latitude = homey.geolocation.getLatitude();
@@ -396,21 +416,25 @@ async function getLocation({ homey }) {
 /**
  * Handles `GET /geofence`.
  *
- * Retrieves the barrier device IDs configured by the user in app settings
- * for near-home proximity notifications.
+ * Enforces session token authorization and retrieves the barrier device IDs configured
+ * by the user in app settings for near-home proximity notifications.
  *
  * @public
+ * @async
  * @param {object} args - Request arguments provided by Homey Web API.
  * @param {import('homey').Homey} args.homey - The Homey application instance.
  * @returns {Promise<{deviceIds: string[]}>} Configured barrier device IDs.
+ * @throws {Error} If the request is unauthenticated or unauthorized (HTTP 401).
  * @example
  * // Request:
- * // GET https://{homeyId}.connect.athom.com/api/app/com.dimapp.aaos/geofence
+ * // GET https://{homeyId}.connect.athom.com/api/app/com.dimapp.aaos/geofence?token=<sessionToken>
  * //
  * // Response:
  * // { "deviceIds": ["abc-123", "def-456"] }
  */
-async function getGeofenceConfig({ homey }) {
+async function getGeofenceConfig(args) {
+  const { homey } = args;
+  await homey.app.requireValidSessionToken(args);
   homey.app.log('[api:getGeofenceConfig] Geofence configuration requested');
   const deviceIds = homey.settings.get('geofence_device_ids') || [];
   homey.app.log(`[api:getGeofenceConfig] Returning ${deviceIds.length} configured barrier device IDs`);
@@ -420,25 +444,28 @@ async function getGeofenceConfig({ homey }) {
 /**
  * Handles `POST /geofence/event`.
  *
- * Receives vehicle arrival or departure geofence notifications from Android Automotive
- * and fires the appropriate Homey Flow trigger card ('geofence_enter' or 'geofence_exit').
+ * Enforces session token authorization, receives vehicle arrival or departure geofence notifications
+ * from Android Automotive, and fires the appropriate Homey Flow trigger card ('geofence_enter' or 'geofence_exit').
  *
  * @public
+ * @async
  * @param {object} args - Request arguments provided by Homey Web API.
  * @param {import('homey').Homey} args.homey - The Homey application instance.
  * @param {object} args.body - Request payload containing transition.
  * @param {'enter'|'exit'} args.body.transition - The transition type detected by the vehicle.
  * @returns {Promise<{success: boolean, triggered: string}>} Result of the flow trigger operation.
- * @throws {Error} If transition argument is missing or invalid, or if firing the trigger card fails.
+ * @throws {Error} If unauthorized (HTTP 401), invalid transition (HTTP 400), or trigger fails (HTTP 500).
  * @example
  * // Request:
- * // POST https://{homeyId}.connect.athom.com/api/app/com.dimapp.aaos/geofence/event
+ * // POST https://{homeyId}.connect.athom.com/api/app/com.dimapp.aaos/geofence/event?token=<sessionToken>
  * // Body: { "transition": "enter" }
  * //
  * // Response:
  * // { "success": true, "triggered": "geofence_enter" }
  */
-async function postGeofenceEvent({ homey, body }) {
+async function postGeofenceEvent(args) {
+  const { homey, body } = args;
+  await homey.app.requireValidSessionToken(args);
   const { transition } = body ?? {};
 
   if (!transition || (transition !== 'enter' && transition !== 'exit')) {
@@ -468,23 +495,27 @@ async function postGeofenceEvent({ homey, body }) {
 /**
  * Handles `GET /thermometers`.
  *
- * Retrieves the thermometer classification configuration (indoor, outdoor)
- * and the list of available devices with temperature measurement capabilities,
+ * Enforces session token authorization, retrieves the thermometer classification configuration
+ * (indoor, outdoor) and the list of available devices with temperature measurement capabilities,
  * filtering out any devices natively excluded from Homey climate (climate_exclude: true),
  * marked as hidden, or whose effective class is not among the allowed climate classes.
  *
  * @public
+ * @async
  * @param {object} args - Request arguments provided by Homey Web API.
  * @param {import('homey').Homey} args.homey - The Homey application instance.
  * @returns {Promise<{config: Object.<string, string>, devices: Array<{id: string, name: string, zone: string}>, allowed_classes: string[]}>}
+ * @throws {Error} If the request is unauthenticated or unauthorized (HTTP 401).
  * @example
  * // Request:
- * // GET https://{homeyId}.connect.athom.com/api/app/com.dimapp.aaos/thermometers
+ * // GET https://{homeyId}.connect.athom.com/api/app/com.dimapp.aaos/thermometers?token=<sessionToken>
  * //
  * // Response:
  * // { "config": { "dev-1": "indoor", "dev-2": "outdoor" }, "devices": [...], "allowed_classes": ["sensor", "thermostat", "heater", "airconditioning"] }
  */
-async function getThermometersConfig({ homey }) {
+async function getThermometersConfig(args) {
+  const { homey } = args;
+  await homey.app.requireValidSessionToken(args);
   homey.app.log('[api:getThermometersConfig] Thermometer configuration requested');
   const config = homey.settings.get('thermometers_config') || {};
   const allowedClimateClasses = _getAllowedClimateClasses();

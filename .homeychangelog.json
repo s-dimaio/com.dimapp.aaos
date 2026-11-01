@@ -62,5 +62,9 @@
   "1.6.1": {
     "en": "General security improvements. Re-pairing on your vehicle is required after this update; please also ensure your Android Automotive OS app is updated to version 1.10.x.",
     "it": "Miglioramenti generali della sicurezza. È necessario effettuare un nuovo pairing sull'auto dopo questo aggiornamento; assicurati inoltre di aver aggiornato l'app Android Automotive OS alla versione 1.10.x."
+  },
+  "1.6.2": {
+    "en": "General security improvements. Re-pairing on your vehicle is required after this update; please also ensure your Android Automotive OS app is updated to version 1.10.x.",
+    "it": "Miglioramenti generali della sicurezza. È necessario effettuare un nuovo pairing sull'auto dopo questo aggiornamento; assicurati inoltre di aver aggiornato l'app Android Automotive OS alla versione 1.10.x."
   }
 }

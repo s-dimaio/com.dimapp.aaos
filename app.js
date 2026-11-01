@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const Homey = require('homey');
 
 const LogManager = require('./lib/LogManager');
@@ -102,6 +103,13 @@ class HomeyAaosCompanionApp extends Homey.App {
    */
   _isLoggingInternal = false;
 
+  /**
+   * Set of SHA-256 hashes of authorized user session tokens.
+   * @private
+   * @type {Set<string>}
+   */
+  _authorizedTokenHashes = new Set();
+
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   /**
@@ -120,6 +128,10 @@ class HomeyAaosCompanionApp extends Homey.App {
     const geofenceDevices = this.homey.settings.get('geofence_device_ids') || [];
     const thermometersConfig = this.homey.settings.get('thermometers_config') || {};
     this.log(`[${TAG}:onInit] Stored configuration: home_devices=${homeDevices.length}, geofence_devices=${geofenceDevices.length}, thermometers=${Object.keys(thermometersConfig).length}`);
+
+    const savedHashes = this.homey.settings.get('authorized_token_hashes') || [];
+    this._authorizedTokenHashes = new Set(Array.isArray(savedHashes) ? savedHashes : []);
+    this.log(`[${TAG}:onInit] Loaded ${this._authorizedTokenHashes.size} authorized token hash(es).`);
 
     const climateClasses = Homey.env.CLIMATE_DEVICE_CLASSES || 'sensor,thermostat,heater,airconditioning (default)';
     this.log(`[${TAG}:onInit] Allowed climate device classes: ${climateClasses}`);
@@ -270,6 +282,118 @@ class HomeyAaosCompanionApp extends Homey.App {
     return { status: session.status };
   }
 
+  /**
+   * Validates whether a given session token is authorized to access protected companion endpoints.
+   *
+   * Validation sequence:
+   * 1. Checks if the token matches the Homey Pro local Owner API token.
+   * 2. Checks if the SHA-256 hash exists in the in-memory authorized token hash set.
+   * 3. Fallback for pre-existing client sessions: Validates the token directly against the local
+   *    Homey Pro gateway (`GET /api/manager/devices/device`). If authorized (HTTP 200), caches the
+   *    hash for subsequent O(1) lookups.
+   *
+   * @public
+   * @async
+   * @param {string} token - The raw session token to validate (mandatory).
+   * @returns {Promise<boolean>} True if the token is valid and authorized, false otherwise.
+   * @example
+   * const isAuthorized = await homey.app.isValidSessionToken(bearerToken);
+   */
+  async isValidSessionToken(token) {
+    if (!token || typeof token !== 'string' || token.trim().length === 0) {
+      return false;
+    }
+
+    const cleanToken = token.trim();
+
+    // 1. Check Owner API Token
+    try {
+      const ownerToken = await this.homey.api.getOwnerApiToken();
+      if (ownerToken && cleanToken === ownerToken) {
+        return true;
+      }
+    } catch (err) {
+      // Ignore owner token retrieval failure
+    }
+
+    // 2. Check cached SHA-256 hashes
+    const hash = crypto.createHash('sha256').update(cleanToken).digest('hex');
+    if (this._authorizedTokenHashes && this._authorizedTokenHashes.has(hash)) {
+      return true;
+    }
+
+    // 3. Fallback verification against local Homey gateway for pre-existing sessions
+    try {
+      const localUrl = await this.homey.api.getLocalUrl();
+      const verifyRes = await fetch(`${localUrl}/api/manager/devices/device`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${cleanToken}` },
+      });
+
+      if (verifyRes.ok) {
+        this.log(`[${TAG}:isValidSessionToken] Token validated successfully against local gateway. Caching hash...`);
+        this._saveAuthorizedToken(cleanToken);
+        return true;
+      }
+    } catch (fetchErr) {
+      this.error(`[${TAG}:isValidSessionToken] Gateway token verification error:`, fetchErr.message || fetchErr);
+    }
+
+    return false;
+  }
+
+  /**
+   * Enforces session token authorization for protected HTTP API endpoints.
+   *
+   * Extracts the token from HTTP headers ('Authorization: Bearer <token>'), query parameters
+   * ('?token=<token>'), or JSON request body ('{ "token": "<token>" }').
+   * Rejects unauthenticated callers with an HTTP 401 Unauthorized error.
+   *
+   * @public
+   * @async
+   * @param {object} [args] - Request arguments provided by Homey Web API.
+   * @param {object} [args.headers] - Request HTTP headers.
+   * @param {object} [args.query] - Request query parameters.
+   * @param {object} [args.body] - Request body parameters.
+   * @returns {Promise<void>} Resolves if authorized; throws an HTTP 401 Error otherwise.
+   * @throws {Error} If token is missing, invalid, or unauthorized (HTTP 401).
+   * @example
+   * await homey.app.requireValidSessionToken(args);
+   */
+  async requireValidSessionToken({ headers, query, body } = {}) {
+    let token = null;
+
+    // 1. Extract from Authorization header
+    const authHeader = headers?.authorization || headers?.Authorization;
+    if (typeof authHeader === 'string' && authHeader.trim().length > 0) {
+      const match = authHeader.match(/^Bearer\s+(.+)$/i);
+      token = match ? match[1].trim() : authHeader.trim();
+    }
+
+    // 2. Extract from query parameters
+    if (!token && query && typeof query.token === 'string' && query.token.trim().length > 0) {
+      token = query.token.trim();
+    }
+
+    // 3. Extract from body parameters
+    if (!token && body && typeof body.token === 'string' && body.token.trim().length > 0) {
+      token = body.token.trim();
+    }
+
+    if (!token) {
+      const queryKeys = query ? Object.keys(query).join(', ') : 'none';
+      const bodyKeys = body ? Object.keys(body).join(', ') : 'none';
+      this.error(`[${TAG}:requireValidSessionToken] Security rejection: Missing authorization token (queryKeys=[${queryKeys}], bodyKeys=[${bodyKeys}]).`);
+      throw Object.assign(new Error('Unauthorized: Missing authorization token.'), { statusCode: 401 });
+    }
+
+    const isValid = await this.isValidSessionToken(token);
+    if (!isValid) {
+      this.error(`[${TAG}:requireValidSessionToken] Security rejection: Invalid or unauthorized token.`);
+      throw Object.assign(new Error('Unauthorized: Invalid or expired session token.'), { statusCode: 401 });
+    }
+  }
+
   // ── Private Methods ────────────────────────────────────────────────────────
 
   /**
@@ -383,7 +507,37 @@ class HomeyAaosCompanionApp extends Homey.App {
     }
 
     this.log(`[${TAG}:_createHomeyUserSession] Scoped user session token successfully established for hub '${maskedHomeyId}'.`);
+    this._saveAuthorizedToken(userSessionToken);
     return userSessionToken;
+  }
+
+  /**
+   * Persists the SHA-256 hash of an authorized session token in memory and settings.
+   *
+   * Hashes the token using SHA-256 before storage to ensure tokens are never persisted in plaintext.
+   * Maintains a capped history (maximum 50 token hashes) to prevent unbounded storage growth.
+   *
+   * @private
+   * @param {string} token - The raw session token to authorize (mandatory).
+   * @returns {void}
+   * @example
+   * this._saveAuthorizedToken('a1b2c3d4...');
+   */
+  _saveAuthorizedToken(token) {
+    if (!token || typeof token !== 'string' || token.trim().length === 0) return;
+    const hash = crypto.createHash('sha256').update(token.trim()).digest('hex');
+    if (!this._authorizedTokenHashes) {
+      this._authorizedTokenHashes = new Set();
+    }
+    this._authorizedTokenHashes.add(hash);
+    const hashArray = Array.from(this._authorizedTokenHashes).slice(-50);
+    this._authorizedTokenHashes = new Set(hashArray);
+    try {
+      this.homey.settings.set('authorized_token_hashes', hashArray);
+      this.log(`[${TAG}:_saveAuthorizedToken] Authorized token hash stored. Total cached hashes: ${this._authorizedTokenHashes.size}`);
+    } catch (err) {
+      this.error(`[${TAG}:_saveAuthorizedToken] Failed to save authorized token hash in settings:`, err.message || err);
+    }
   }
 
   /**
